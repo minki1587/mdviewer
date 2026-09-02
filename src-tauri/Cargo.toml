@@ -1,0 +1,29 @@
+[package]
+name = "md-viewer"
+version = "2.0.0"
+edition = "2021"
+description = "마크다운 뷰어 겸 편집기"
+license = "MIT"
+repository = "https://github.com/minki1587/mdviewer"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+
+# 배포 크기를 줄이는 설정. 프로토타입에서 이 설정으로 1.69MB 설치 파일을 확인했다.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

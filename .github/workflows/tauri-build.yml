@@ -1,0 +1,88 @@
+# Tauri 판을 windows 러너에서 빌드한다.
+#
+# 로컬에 Rust 와 MSVC 빌드 도구가 없어 여기서 컴파일을 검증한다.
+# 이식이 끝나 main 으로 합칠 때 이 파일이 release.yml 을 대신하게 된다.
+
+name: tauri-build
+
+on:
+  push:
+    branches:
+      - tauri-port
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 캐시
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 프런트엔드 번들
+        run: npm run build:web
+
+      - name: Tauri 빌드
+        run: npx tauri build
+        env:
+          # 서명 키가 없으면 업데이터 산출물(latest.json)은 만들어지지 않지만
+          # 앱 자체는 정상적으로 빌드된다. 키는 릴리스 단계에서 넣는다.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: 용량 측정
+        id: sizes
+        shell: bash
+        run: |
+          rel=src-tauri/target/release
+          bin=$(find "$rel" -maxdepth 1 -name "MD Viewer.exe" | head -1)
+          [ -z "$bin" ] && bin=$(find "$rel" -maxdepth 1 -name "*.exe" | head -1)
+          binsz=$(stat -c %s "$bin")
+
+          extra=0
+          for f in $(find "$rel" -maxdepth 1 -name "*.dll"); do
+            extra=$(( extra + $(stat -c %s "$f") ))
+          done
+
+          setup=$(find "$rel/bundle/nsis" -name "*-setup.exe" | head -1)
+          setupsz=$(stat -c %s "$setup")
+          total=$(( binsz + extra ))
+
+          echo "앱 실행 파일 : $binsz bytes"
+          echo "설치 후 합계 : $total bytes"
+          echo "설치 파일    : $setupsz bytes"
+          echo "installed=$total" >> "$GITHUB_OUTPUT"
+          echo "setup=$setupsz"   >> "$GITHUB_OUTPUT"
+
+          echo "--- bundle 산출물 ---"
+          find "$rel/bundle" -type f -exec sh -c 'echo "$(stat -c %s "$1")  $1"' _ {} \;
+
+      - name: 크기 표식 (이름에 바이트 수)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tauri-installed-${{ steps.sizes.outputs.installed }}-setup-${{ steps.sizes.outputs.setup }}
+          path: src-tauri/tauri.conf.json
+
+      - name: 설치 파일 보관
+        uses: actions/upload-artifact@v4
+        with:
+          name: mdviewer-tauri-setup
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
