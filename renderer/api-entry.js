@@ -237,6 +237,27 @@ listen('app:error', (e) => {
   modal({ title: title || '오류', detail, buttons: ['확인'], cancelIndex: 0 });
 });
 
+/* 저장하지 않은 탭이 있는 채로 창을 닫으려 할 때.
+   Electron 판의 win.on('close') 대화상자를 그대로 재현한다 —
+   모두 저장 / 저장 안 함 / 취소. */
+let saveAllQuitCb = null;
+
+listen('app:close-requested', async (e) => {
+  const n = Number(e.payload) || 0;
+  const answer = await modal({
+    title: n === 1
+      ? '저장하지 않은 문서가 1개 있습니다.'
+      : `저장하지 않은 문서가 ${n}개 있습니다.`,
+    detail: '저장하지 않으면 변경 내용이 사라집니다.',
+    buttons: ['모두 저장', '저장 안 함', '취소'],
+    cancelIndex: 2,
+  });
+
+  if (answer === 0) saveAllQuitCb?.();          // 저장이 끝나면 렌더러가 forceQuit 을 부른다
+  else if (answer === 1) invoke('force_quit');  // 그냥 닫는다
+  // 2 는 취소 — 아무것도 하지 않는다
+});
+
 // 도움말 → MD Viewer 정보
 listen('help:about', async () => {
   const version = await invoke('app_version');
@@ -326,7 +347,10 @@ window.api = {
   /* ---- 메인에서 오는 신호 ---- */
   onOpen: (cb) => on('tab:open', cb),
   onFileChanged: (cb) => on('file:changed', cb),
-  onSaveAllQuit: (cb) => on('app:save-all-quit', () => cb()),
+
+  /* 렌더러는 "모두 저장하고 끝내라"는 신호만 받는다. 그 앞의 세 갈래
+     질문은 아래 app:close-requested 처리기가 대신 한다. */
+  onSaveAllQuit: (cb) => { saveAllQuitCb = cb; },
   onZoom: (cb) => on('view:zoom', cb),
   onToggleToc: (cb) => on('view:toggle-toc', () => cb()),
   onToggleTheme: (cb) => on('view:toggle-theme', () => cb()),

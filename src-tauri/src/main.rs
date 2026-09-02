@@ -449,6 +449,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&item("view:toggle-theme", "어두운 화면 전환", Some("CmdOrCtrl+D"))?)
         .separator()
         .item(&PredefinedMenuItem::fullscreen(app, Some("전체 화면"))?)
+        .item(&item("view:devtools", "개발자 도구", Some("F12"))?)
         .build()?;
 
     let help = SubmenuBuilder::new(app, "도움말(&H)")
@@ -476,6 +477,15 @@ fn dispatch_menu(app: &AppHandle, id: &str) {
             tauri::async_runtime::spawn(async move { pick_files(handle).await });
         }
         "update:check" => check_update_inner(app.clone(), true),
+        "view:devtools" => {
+            if let Some(win) = app.get_webview_window("main") {
+                if win.is_devtools_open() {
+                    win.close_devtools();
+                } else {
+                    win.open_devtools();
+                }
+            }
+        }
         "view:mode:toggle" => {
             let _ = app.emit("view:mode", "toggle");
         }
@@ -714,9 +724,10 @@ fn main() {
                         if forced || dirty == 0 {
                             return;
                         }
-                        // 저장 여부는 렌더러가 자기 모달로 묻고 force_quit 으로 답한다
+                        // 모두 저장 / 저장 안 함 / 취소를 묻는다. 네이티브 대화상자는
+                        // 버튼이 두 개까지라 JS 쪽 모달이 띄우고 답을 돌려준다.
                         api.prevent_close();
-                        let _ = closer.emit("app:save-all-quit", dirty);
+                        let _ = closer.emit("app:close-requested", dirty);
                     }
                 });
             }

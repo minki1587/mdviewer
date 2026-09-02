@@ -10,7 +10,9 @@ repository = "https://github.com/minki1587/mdviewer"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# devtools: 릴리스 빌드에서도 F12 개발자 도구를 쓰려면 필요하다.
+# Electron 판 메뉴에 있던 기능이라 그대로 유지한다.
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-updater = "2"
