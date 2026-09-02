@@ -230,6 +230,14 @@ function create({ parent, doc = '', onChange, onScroll, onSave }) {
   return {
     view,
     getDoc: () => view.state.doc.toString(),
+
+    /* ---- 탭마다 독립된 편집 상태를 갖기 위한 도구 ----
+       EditorState 하나에 본문, 커서, 되돌리기 기록이 모두 들어 있다.
+       탭을 바꿀 때 상태만 갈아 끼우면 편집기 인스턴스는 하나로 충분하다. */
+    createState: (doc = '') => EditorState.create({ doc, extensions }),
+    getState: () => view.state,
+    swapState(state) { view.setState(state); },
+
     /** 새 문서를 올린다. reset 이면 되돌리기 기록까지 비운다. */
     setDoc(next, { reset = true } = {}) {
       if (reset) {
@@ -243,6 +251,15 @@ function create({ parent, doc = '', onChange, onScroll, onSave }) {
     scrollEl: () => view.scrollDOM,
     undo: () => undo(view),
     redo: () => redo(view),
+    /** 커서 자리(또는 선택 영역)에 글을 넣는다. */
+    insert(text) {
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+      });
+      view.focus();
+    },
     bold: () => toggleWrap(view, '**'),
     italic: () => toggleWrap(view, '*'),
     link: () => insertLink(view),

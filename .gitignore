@@ -1,4 +1,5 @@
 node_modules/
 dist/
 renderer/vendor/
+dev-app-update.yml
 *.log

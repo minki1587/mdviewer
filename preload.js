@@ -117,35 +117,60 @@ function render(markdown, baseDir) {
 contextBridge.exposeInMainWorld('api', {
   render,
   ready: () => ipcRenderer.send('app:ready'),
-  onFile: (cb) => ipcRenderer.on('file:loaded', (_e, payload) => cb(payload)),
-  onZoom: (cb) => ipcRenderer.on('view:zoom', (_e, delta) => cb(delta)),
-  onToggleToc: (cb) => ipcRenderer.on('view:toggle-toc', () => cb()),
-  onToggleTheme: (cb) => ipcRenderer.on('view:toggle-theme', () => cb()),
-  onNewFile: (cb) => ipcRenderer.on('file:new', () => cb()),
-  onMode: (cb) => ipcRenderer.on('view:mode', (_e, mode) => cb(mode)),
-  onSave: (cb) => ipcRenderer.on('doc:save', () => cb()),
-  onSaveAs: (cb) => ipcRenderer.on('doc:save-as', () => cb()),
-  onSaveThen: (cb) => ipcRenderer.on('doc:save-then', (_e, pending) => cb(pending || {})),
-  onChangedOutside: (cb) => ipcRenderer.on('file:changed-outside', () => cb()),
-  onEditCommand: (cb) => {
-    for (const name of ['undo', 'redo', 'find', 'bold', 'italic', 'link']) {
-      ipcRenderer.on(`edit:${name}`, () => cb(name));
-    }
-  },
-  openDialog: () => ipcRenderer.invoke('dialog:open'),
-  newFile: () => ipcRenderer.invoke('file:new'),
-  saveFile: (path, text) => ipcRenderer.invoke('file:save', { path, text }),
-  saveFileAs: (text) => ipcRenderer.invoke('file:save-as', { text }),
-  setDirty: (dirty) => ipcRenderer.send('doc:dirty', dirty),
-  forceQuit: () => ipcRenderer.invoke('app:force-quit'),
+
+  /* ---- 파일 ---- */
+  pickFiles: () => ipcRenderer.invoke('files:pick'),
   openPath: (p) => ipcRenderer.invoke('file:open', p),
+  readFile: (p) => ipcRenderer.invoke('file:read', p),
+  saveFile: (path, text) => ipcRenderer.invoke('file:save', { path, text }),
+  saveFileAs: (text, name) => ipcRenderer.invoke('file:save-as', { text, name }),
+  setWatchList: (paths) => ipcRenderer.invoke('watch:set', paths),
+  confirmClose: (name) => ipcRenderer.invoke('dialog:confirm-close', name),
+
+  /* ---- 상태 보고 ---- */
+  reportState: (state) => ipcRenderer.send('doc:state', state),
+  forceQuit: () => ipcRenderer.invoke('app:force-quit'),
+
+  /* ---- 바깥으로 ---- */
   openExternal: (url) => ipcRenderer.invoke('shell:external', url),
   openLocal: (p) => ipcRenderer.invoke('shell:open-path', p),
+  reveal: (p) => ipcRenderer.invoke('shell:reveal', p),
+
+  /* ---- 업데이트 ---- */
+  appVersion: () => ipcRenderer.invoke('app:version'),
+  updateState: () => ipcRenderer.invoke('update:state'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateState: (cb) => ipcRenderer.on('update:state', (_e, payload) => cb(payload)),
+
+  /* ---- 설정 ---- */
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
   systemPrefersDark: () => ipcRenderer.invoke('theme:system-dark'),
-  // 드래그&드롭된 File 객체에서 실제 경로 얻기
+
+  /* ---- 드래그&드롭된 File 객체에서 실제 경로 얻기 ---- */
   pathForFile: (file) => {
     try { return webUtils.getPathForFile(file); } catch { return file.path || null; }
+  },
+
+  /* ---- 메인에서 오는 신호 ---- */
+  onOpen: (cb) => ipcRenderer.on('tab:open', (_e, payload) => cb(payload)),
+  onFileChanged: (cb) => ipcRenderer.on('file:changed', (_e, payload) => cb(payload)),
+  onSaveAllQuit: (cb) => ipcRenderer.on('app:save-all-quit', () => cb()),
+  onZoom: (cb) => ipcRenderer.on('view:zoom', (_e, delta) => cb(delta)),
+  onToggleToc: (cb) => ipcRenderer.on('view:toggle-toc', () => cb()),
+  onToggleTheme: (cb) => ipcRenderer.on('view:toggle-theme', () => cb()),
+  onMode: (cb) => ipcRenderer.on('view:mode', (_e, mode) => cb(mode)),
+
+  /** 메뉴에서 오는 문서/탭 명령을 한 번에 받는다. */
+  onCommand: (cb) => {
+    const names = [
+      'doc:new', 'doc:save', 'doc:save-as', 'doc:save-all', 'doc:reload', 'doc:reveal',
+      'tab:close', 'tab:close-others', 'tab:next', 'tab:prev',
+      'edit:undo', 'edit:redo', 'edit:find', 'edit:bold', 'edit:italic', 'edit:link',
+      'help:syntax', 'help:keys',
+    ];
+    for (const name of names) ipcRenderer.on(name, () => cb(name));
   },
 });
