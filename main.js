@@ -189,11 +189,20 @@ function sendUpdate(payload) {
 }
 
 /** 개발 중이거나 저장소를 아직 지정하지 않았으면 확인하지 않는다. */
+/* 설치본의 package.json 에는 build 필드가 없다. electron-builder 가 패키징할 때
+   지우기 때문이다. 그래서 발행 대상은 electron-builder 가 resources 에 넣어주는
+   app-update.yml 에서 읽어야 한다. package.json 을 보면 설치본에서는 publish 가
+   언제나 undefined 라, 제대로 설정된 빌드에서도 확인 자체가 막힌다. */
 function updateReason() {
   if (devUpdate) return null;
   if (!app.isPackaged) return 'dev';
-  const publish = require('./package.json').build?.publish?.[0];
-  if (!publish || publish.owner === 'OWNER') return 'unconfigured';
+  try {
+    const config = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8');
+    const owner = /^owner:\s*(.+)$/m.exec(config);
+    if (!owner || owner[1].trim() === 'OWNER') return 'unconfigured';
+  } catch {
+    return 'unconfigured';   // 발행 설정 없이 빌드된 경우
+  }
   return null;
 }
 
