@@ -1,0 +1,64 @@
+# Tauri 판을 빌드해 GitHub 릴리스로 발행한다.
+#
+#   git tag v2.0.0
+#   git push origin v2.0.0
+#
+# tauri-action 이 설치 파일과 함께 latest.json 을 만들어 붙인다.
+# 설치된 앱은 tauri.conf.json 의 endpoints 가 가리키는
+# releases/latest/download/latest.json 을 보고 새 버전을 판단한다.
+#
+# Electron 판의 release.yml 은 main 브랜치 푸시에만 반응하므로
+# 태그를 밀어도 함께 돌지 않는다.
+
+name: tauri-release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 캐시
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 프런트엔드 번들
+        run: npm run build:web
+
+      - name: 빌드 후 릴리스 발행
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        with:
+          tagName: v__VERSION__
+          releaseName: MD Viewer v__VERSION__
+          releaseBody: |
+            Windows 설치 파일은 아래 `.exe` 를 받으세요.
+
+            서명서가 없어 SmartScreen 경고가 뜹니다.
+            **추가 정보 → 실행** 으로 진행하시면 됩니다.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
