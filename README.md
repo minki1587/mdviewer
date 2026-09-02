@@ -151,12 +151,18 @@ git push -u origin main
 
 ```bash
 npm version 1.4.0        # package.json 갱신 + 커밋 + v1.4.0 태그
-git push --follow-tags
+git push origin main
 ```
 
-태그가 올라가면 `.github/workflows/release.yml` 이 Windows 러너에서 설치 파일을
-만들어 GitHub 릴리스에 올립니다. 함께 올라가는 `latest.yml` 이 버전 정보이고,
-설치된 앱은 이 파일을 보고 새 버전을 판단합니다.
+`main` 에 푸시되면 `.github/workflows/release.yml` 이 Windows 러너에서 설치 파일을
+만들어 GitHub 릴리스에 올립니다. 릴리스와 `v1.4.0` 태그는 electron-builder 가
+직접 만들므로 따로 태그를 밀 필요는 없습니다. 함께 올라가는 `latest.yml` 이
+버전 정보이고, 설치된 앱은 이 파일을 보고 새 버전을 판단합니다.
+
+릴리스는 `package.json` 의 `version` 이 올라간 푸시에서만 만들어집니다. 같은
+버전으로 다시 푸시하면 워크플로가 이미 발행된 릴리스를 확인하고 조용히 넘어가므로,
+문서 수정 같은 커밋이 빌드를 돌리지 않습니다. **버전은 `npm version` 으로만
+올리세요.** `package.json` 을 손으로 고치면 커밋과 태그가 따로 놀게 됩니다.
 
 별도 토큰은 필요 없습니다. 워크플로가 GitHub이 자동으로 주는 `GITHUB_TOKEN` 을
 씁니다. 저장소가 비공개면 앱이 릴리스를 읽지 못하니 공개로 두어야 합니다.
@@ -205,7 +211,7 @@ renderer/vendor/        scripts/ 에서 생성되는 편집기 번들 (직접 �
 scripts/editor-entry.js CodeMirror 6 설정 — 문법 강조, 편집 명령
 scripts/build-editor.mjs esbuild 번들 스크립트
 assets/icon.ico         앱 및 파일 연결 아이콘
-.github/workflows/      태그를 올리면 설치 파일을 만들어 릴리스에 올리는 작업
+.github/workflows/      main 에 푸시되면 설치 파일을 만들어 릴리스에 올리는 작업
 ```
 
 마크다운 파싱은 렌더러가 아니라 preload에서 처리하고, 결과를 DOMPurify로 걸러
