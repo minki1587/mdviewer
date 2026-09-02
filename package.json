@@ -1,0 +1,98 @@
+{
+  "name": "md-viewer",
+  "version": "1.0.0",
+  "description": "마크다운 뷰어 겸 편집기",
+  "main": "main.js",
+  "author": "Your Name",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build:editor": "node scripts/build-editor.mjs",
+    "prestart": "npm run build:editor",
+    "predev": "npm run build:editor",
+    "predist": "npm run build:editor",
+    "predist:dir": "npm run build:editor",
+    "start": "electron .",
+    "dev": "electron . sample.md",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.14",
+    "highlight.js": "^11.12.0",
+    "marked": "^18.0.11"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.11.0",
+    "@codemirror/lang-markdown": "^6.5.2",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.9",
+    "@lezer/highlight": "^1.2.3",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1"
+  },
+  "build": {
+    "appId": "com.yourname.mdviewer",
+    "productName": "MD Viewer",
+    "copyright": "Copyright © 2026 Your Name",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/icon.ico",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}-setup.${ext}",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd"
+        ],
+        "name": "Markdown Document",
+        "description": "마크다운 문서",
+        "icon": "assets/icon.ico",
+        "role": "Viewer",
+        "perMachine": false
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MD Viewer",
+      "deleteAppDataOnUninstall": false,
+      "language": "1042",
+      "installerLanguages": [
+        "ko-KR",
+        "en-US"
+      ]
+    }
+  }
+}
