@@ -229,66 +229,73 @@ const on = (name, cb) => { listen(name, (e) => cb(e.payload)); };
 
 /** 렌더러가 동기적으로 읽어 가므로 마지막 상태를 들고 있는다. */
 let lastUpdateState = { status: 'idle' };
-listen('update:state', (e) => { lastUpdateState = e.payload; });
 
-// 메인이 알려주는 오류는 모달로 보여 준다 (Electron 의 showErrorBox 자리)
-listen('app:error', (e) => {
-  const { title, detail } = e.payload || {};
-  modal({ title: title || '오류', detail, buttons: ['확인'], cancelIndex: 0 });
-});
-
-/* 저장하지 않은 탭이 있는 채로 창을 닫으려 할 때.
-   Electron 판의 win.on('close') 대화상자를 그대로 재현한다 —
-   모두 저장 / 저장 안 함 / 취소. */
+/** app:close-requested 가 "모두 저장" 답을 받으면 부를 콜백. */
 let saveAllQuitCb = null;
 
-listen('app:close-requested', async (e) => {
-  const n = Number(e.payload) || 0;
-  const answer = await modal({
-    title: n === 1
-      ? '저장하지 않은 문서가 1개 있습니다.'
-      : `저장하지 않은 문서가 ${n}개 있습니다.`,
-    detail: '저장하지 않으면 변경 내용이 사라집니다.',
-    buttons: ['모두 저장', '저장 안 함', '취소'],
-    cancelIndex: 2,
+/* 이벤트 연결은 window.api 를 만든 뒤에 한다.
+   여기서 예외가 나면 window.api 할당에 도달하지 못해 renderer.js 가
+   통째로 죽는다. 실제로 진단하기 가장 어려운 실패 방식이다. */
+function wireEvents() {
+  listen('update:state', (e) => { lastUpdateState = e.payload; });
+
+  // 메인이 알려주는 오류는 모달로 보여 준다 (Electron 의 showErrorBox 자리)
+  listen('app:error', (e) => {
+    const { title, detail } = e.payload || {};
+    modal({ title: title || '오류', detail, buttons: ['확인'], cancelIndex: 0 });
   });
 
-  if (answer === 0) saveAllQuitCb?.();          // 저장이 끝나면 렌더러가 forceQuit 을 부른다
-  else if (answer === 1) invoke('force_quit');  // 그냥 닫는다
-  // 2 는 취소 — 아무것도 하지 않는다
-});
+  /* 저장하지 않은 탭이 있는 채로 창을 닫으려 할 때.
+     Electron 판의 win.on('close') 대화상자를 그대로 재현한다 —
+     모두 저장 / 저장 안 함 / 취소. */
+  listen('app:close-requested', async (e) => {
+    const n = Number(e.payload) || 0;
+    const answer = await modal({
+      title: n === 1
+        ? '저장하지 않은 문서가 1개 있습니다.'
+        : `저장하지 않은 문서가 ${n}개 있습니다.`,
+      detail: '저장하지 않으면 변경 내용이 사라집니다.',
+      buttons: ['모두 저장', '저장 안 함', '취소'],
+      cancelIndex: 2,
+    });
 
-// 도움말 → MD Viewer 정보
-listen('help:about', async () => {
-  const version = await invoke('app_version');
-  modal({
-    title: `MD Viewer ${version}`,
-    detail: 'Tauri · WebView2 기반',
-    buttons: ['확인'],
-    cancelIndex: 0,
+    if (answer === 0) saveAllQuitCb?.();          // 저장이 끝나면 렌더러가 forceQuit 을 부른다
+    else if (answer === 1) invoke('force_quit');  // 그냥 닫는다
+    // 2 는 취소 — 아무것도 하지 않는다
   });
-});
 
-/* 파일 드롭.
-   WebView2 는 OS 파일 드래그를 DOM 이벤트로 주지 않는다. Tauri 가 주는
-   경로를 받아 처리하고, renderer.js 의 시각 효과 클래스만 맞춰 준다. */
-getCurrentWebview().onDragDropEvent((event) => {
-  const { type } = event.payload;
-  if (type === 'over') {
-    document.body.classList.add('dragging');
-    return;
-  }
-  if (type === 'leave') {
-    document.body.classList.remove('dragging');
-    return;
-  }
-  if (type === 'drop') {
-    document.body.classList.remove('dragging');
-    const paths = (event.payload.paths || [])
-      .filter((p) => MD_EXTS.has(extname(p).toLowerCase()));
-    if (paths.length) invoke('open_path', { paths });
-  }
-});
+  // 도움말 → MD Viewer 정보
+  listen('help:about', async () => {
+    const version = await invoke('app_version');
+    modal({
+      title: `MD Viewer ${version}`,
+      detail: 'Tauri · WebView2 기반',
+      buttons: ['확인'],
+      cancelIndex: 0,
+    });
+  });
+
+  /* 파일 드롭.
+     WebView2 는 OS 파일 드래그를 DOM 이벤트로 주지 않는다. Tauri 가 주는
+     경로를 받아 처리하고, renderer.js 의 시각 효과 클래스만 맞춰 준다. */
+  getCurrentWebview().onDragDropEvent((event) => {
+    const { type } = event.payload;
+    if (type === 'over') {
+      document.body.classList.add('dragging');
+      return;
+    }
+    if (type === 'leave') {
+      document.body.classList.remove('dragging');
+      return;
+    }
+    if (type === 'drop') {
+      document.body.classList.remove('dragging');
+      const paths = (event.payload.paths || [])
+        .filter((p) => MD_EXTS.has(extname(p).toLowerCase()));
+      if (paths.length) invoke('open_path', { paths });
+    }
+  });
+}
 
 /* --------------------------------------------------------------- API */
 
@@ -366,3 +373,20 @@ window.api = {
     for (const name of names) listen(name, () => cb(name));
   },
 };
+
+/* window.api 가 자리를 잡은 뒤에 이벤트를 연결한다.
+   실패하면 화면에 드러낸다 — 조용히 죽으면 원인을 찾을 길이 없다. */
+try {
+  wireEvents();
+} catch (err) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const box = document.createElement('pre');
+    box.style.cssText =
+      'position:fixed;inset:12px;z-index:99999;overflow:auto;padding:14px;' +
+      'background:#2a0f12;color:#ffd9dd;font:12px/1.5 monospace;' +
+      'border:1px solid #7a2530;border-radius:8px;white-space:pre-wrap';
+    box.textContent =
+      'api 초기화에 실패했습니다.\n\n' + (err?.stack || String(err));
+    document.body.appendChild(box);
+  });
+}

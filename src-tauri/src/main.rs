@@ -103,8 +103,20 @@ fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
  * 명령 — 파일
  * ------------------------------------------------------------------ */
 
+/// 창은 visible:false 로 만들어 두고 여기서 보여 준다.
+/// Electron 판의 ready-to-show 와 같은 자리다. 내용이 그려지기 전에
+/// 빈 창이 번쩍이는 것을 막는다.
+fn show_main_window(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 #[tauri::command]
 fn ready(app: AppHandle, state: State<AppState>) {
+    show_main_window(&app);
+
     let queued: Vec<String> = {
         let mut pending = state.pending.lock().unwrap();
         std::mem::take(&mut *pending)
@@ -701,6 +713,14 @@ fn main() {
             });
 
             spawn_watcher(handle.clone());
+
+            // 안전장치: 렌더러가 ready 를 못 보내는 상황(스크립트 오류 등)에도
+            // 창은 떠야 한다. 보이지 않는 창은 진단할 방법조차 없다.
+            let fallback = handle.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(3));
+                show_main_window(&fallback);
+            });
 
             // 창이 뜨고 조금 지난 뒤 조용히 한 번, 이후 4시간마다.
             // tokio 를 직접 의존하지 않으려고 평범한 스레드에서 잰다.
