@@ -299,7 +299,7 @@ function wireEvents() {
 
 /* --------------------------------------------------------------- API */
 
-window.api = {
+const tauriApi = {
   render,
   ready: () => invoke('ready'),
 
@@ -374,19 +374,52 @@ window.api = {
   },
 };
 
-/* window.api 가 자리를 잡은 뒤에 이벤트를 연결한다.
-   실패하면 화면에 드러낸다 — 조용히 죽으면 원인을 찾을 길이 없다. */
-try {
-  wireEvents();
-} catch (err) {
-  document.addEventListener('DOMContentLoaded', () => {
+/** 화면 위에 진단 상자를 띄운다. 콘솔을 열지 않아도 보이게. */
+function notice(text, tone = 'error') {
+  const paint = () => {
     const box = document.createElement('pre');
     box.style.cssText =
       'position:fixed;inset:12px;z-index:99999;overflow:auto;padding:14px;' +
-      'background:#2a0f12;color:#ffd9dd;font:12px/1.5 monospace;' +
-      'border:1px solid #7a2530;border-radius:8px;white-space:pre-wrap';
-    box.textContent =
-      'api 초기화에 실패했습니다.\n\n' + (err?.stack || String(err));
+      (tone === 'error'
+        ? 'background:#2a0f12;color:#ffd9dd;border:1px solid #7a2530;'
+        : 'background:#12212a;color:#d5ecff;border:1px solid #25566f;') +
+      'font:12px/1.5 monospace;border-radius:8px;white-space:pre-wrap';
+    box.textContent = text;
     document.body.appendChild(box);
-  });
+  };
+  if (document.body) paint();
+  else document.addEventListener('DOMContentLoaded', paint);
+}
+
+/* 어느 런타임에서 열렸는지 가린다.
+
+   - Electron: preload.js 가 이미 window.api 를 만들어 두었다. 게다가
+     contextBridge 가 만든 그 속성은 non-configurable 이라 덮어쓰면
+     예외가 난다. 손대지 않고 비켜선다.
+   - Tauri: 아래에서 window.api 를 만든다.
+   - 둘 다 아님(브라우저로 index.html 을 직접 연 경우 등): 안내만 띄운다.
+     예전에는 여기서 getCurrentWebview() 가 undefined 를 읽어
+     'Cannot read properties of undefined (reading metadata)' 로 죽었다. */
+
+const hasElectronApi = typeof window.api?.render === 'function';
+const hasTauri = !!window.__TAURI_INTERNALS__;
+
+if (hasElectronApi) {
+  // Electron 판으로 실행 중이다. preload 가 다 해 두었다.
+} else if (!hasTauri) {
+  notice(
+    'MD Viewer 를 브라우저나 다른 런타임에서 열었습니다.\n\n' +
+    '이 화면은 Tauri 앱 안에서만 동작합니다.\n' +
+    '설치본을 실행하거나, 개발 중이라면 다음을 쓰세요:\n\n' +
+    '  npm run tauri:dev      (Tauri 판 — Rust 툴체인 필요)\n' +
+    '  npm run dev            (Electron 판 — main 브랜치)',
+    'info',
+  );
+} else {
+  window.api = tauriApi;
+  try {
+    wireEvents();
+  } catch (err) {
+    notice('api 초기화에 실패했습니다.\n\n' + (err?.stack || String(err)));
+  }
 }
