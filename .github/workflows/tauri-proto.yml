@@ -84,6 +84,43 @@ jobs:
           echo "   Tauri    : 위 수치 참고"
           echo "=============================================="
 
+      # 아티팩트는 zip 으로 압축돼 size_in_bytes 가 실제 크기와 다르다.
+      # 인증 없이 정확한 수치를 읽으려고 바이트 수를 아티팩트 이름에 새긴다.
+      - name: 설치 후 용량 계산
+        id: sizes
+        shell: bash
+        working-directory: prototype-tauri
+        run: |
+          rel=src-tauri/target/release
+          bin=$(find "$rel" -maxdepth 1 -name "*.exe" | head -1)
+          binsz=$(stat -c %s "$bin")
+
+          extra=0
+          for f in $(find "$rel" -maxdepth 1 -name "*.dll"); do
+            extra=$(( extra + $(stat -c %s "$f") ))
+            echo "동봉 DLL: $f ($(stat -c %s "$f") bytes)"
+          done
+
+          setup=$(find "$rel/bundle/nsis" -name "*-setup.exe" | head -1)
+          setupsz=$(stat -c %s "$setup")
+          total=$(( binsz + extra ))
+
+          echo "앱 실행 파일 : $binsz bytes"
+          echo "동봉 DLL 합계: $extra bytes"
+          echo "설치 후 합계 : $total bytes"
+          echo "설치 파일    : $setupsz bytes"
+
+          echo "installed=$total" >> "$GITHUB_OUTPUT"
+          echo "setup=$setupsz"   >> "$GITHUB_OUTPUT"
+          echo "$total" > sizes.txt
+
+      - name: 크기 표식 (이름에 바이트 수)
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-${{ steps.sizes.outputs.installed }}-setup-${{ steps.sizes.outputs.setup }}
+          path: prototype-tauri/sizes.txt
+          if-no-files-found: error
+
       - name: 설치 파일 보관
         uses: actions/upload-artifact@v4
         with:
