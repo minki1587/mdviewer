@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "MD Viewer 창이 쓰는 권한. 파일 입출력·대화상자·바깥 열기는 모두 Rust 쪽 커맨드를 거치므로 프런트엔드에는 코어 권한만 준다.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-title",
+    "core:webview:allow-internal-toggle-devtools",
+    "opener:default"
+  ]
+}

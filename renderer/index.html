@@ -2,8 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src file:; style-src file: 'unsafe-inline'; img-src file: data: blob: https:; font-src file: data:; connect-src 'none';" />
+  <!-- CSP 는 tauri.conf.json 의 app.security.csp 에서 주입된다. -->
   <title>MD Viewer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -107,6 +106,7 @@
 
   <div id="toast" role="status" aria-live="polite"></div>
 
+  <script src="vendor/api.js"></script>
   <script src="vendor/editor.js"></script>
   <script src="help-data.js"></script>
   <script src="renderer.js"></script>

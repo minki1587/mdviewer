@@ -1,0 +1,83 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MD Viewer",
+  "version": "../package.json",
+  "identifier": "com.yourname.mdviewer",
+  "build": {
+    "frontendDist": "../renderer",
+    "beforeDevCommand": "npm run build:web",
+    "beforeBuildCommand": "npm run build:web"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MD Viewer",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 520,
+        "minHeight": 380,
+        "visible": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https: data:; media-src 'self' asset: http://asset.localhost https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "**"
+        ]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "../assets/icon.png",
+      "../assets/icon.ico"
+    ],
+    "copyright": "Copyright © 2026 Your Name",
+    "category": "Productivity",
+    "shortDescription": "마크다운 뷰어 겸 편집기",
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd"
+        ],
+        "name": "Markdown Document",
+        "description": "마크다운 문서",
+        "role": "Viewer"
+      }
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Korean",
+          "English"
+        ],
+        "displayLanguageSelector": true,
+        "compression": "lzma"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/minki1587/mdviewer/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENGNkVDQTkyNDEyRjNGNDIKUldSQ1B5OUJrc3B1ejUxUi9uUllUQ1FtMnlyTWkvenRsOFJyN3ZwZUJlQzAvVzJTZnpsemZwWW4K",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

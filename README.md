@@ -12,29 +12,46 @@
 
 ## 1. 개발 환경에서 실행
 
-Node.js 20 이상이 필요합니다.
+창과 파일 입출력은 Rust(Tauri 2), 화면은 웹 기술로 되어 있습니다. 그래서
+준비물이 셋입니다.
+
+- **Node.js 20 이상** — 화면 쪽 번들을 만듭니다
+- **Rust (stable)** — <https://rustup.rs>
+- **MSVC 빌드 도구** — Visual Studio Build Tools 의 "C++ 데스크톱 개발" 워크로드
+  (Windows 10/11 SDK 포함)
+
+화면은 시스템에 이미 깔려 있는 **WebView2**(Edge)를 씁니다. Windows 11 에는
+기본으로 들어 있고, 없으면 설치 파일이 알아서 받아 옵니다.
 
 ```bash
 npm install
-npm run dev        # sample.md 를 열면서 실행
-npm start          # 빈 화면으로 실행
+npm run dev        # 개발 모드로 실행
 ```
 
-`npm start` / `npm run dev` 는 실행 전에 편집기 번들(`renderer/vendor/editor.js`)을
-자동으로 다시 만듭니다. 따로 빌드할 필요는 없습니다.
+`npm run dev` / `npm run build` 는 실행 전에 웹 번들
+(`renderer/vendor/editor.js`, `renderer/vendor/api.js`)을 자동으로 다시 만듭니다.
+따로 빌드할 필요는 없습니다.
+
+문서를 열어 둔 채로 시작하려면 인자로 넘기면 됩니다.
+
+```bash
+npm run dev -- -- sample.md
+```
 
 ## 2. 설치 파일 만들기
 
 Windows에서 실행해야 NSIS 설치 파일이 만들어집니다.
 
 ```bash
-npm run dist
+npm run build
 ```
 
-`dist/MD Viewer-1.0.0-setup.exe` 가 생성됩니다.
+`src-tauri/target/release/bundle/nsis/MD Viewer_1.3.1_x64-setup.exe` 가 생성됩니다.
+설치 파일은 약 2.5MB, 설치 후 차지하는 자리는 약 5.5MB 입니다.
 설치 중 폴더 선택이 가능하고, 관리자 권한 없이 현재 사용자 계정에만 설치됩니다.
 
-실행 파일만 확인하려면 `npm run dist:dir` → `dist/win-unpacked/MD Viewer.exe`.
+실행 파일만 확인하려면 `src-tauri/target/release/md-viewer.exe` 를 그대로
+실행하면 됩니다. 화면 파일은 실행 파일 안에 들어 있어서 따로 챙길 것이 없습니다.
 
 ## 3. `.md` 기본 프로그램으로 지정
 
@@ -134,8 +151,31 @@ Windows 10/11은 보안상 기본 앱을 프로그램이 스스로 바꾸지 못
 npm run setup:repo -- <내계정>/md-viewer
 ```
 
-`package.json` 의 `repository` 와 `build.publish` 를 한꺼번에 채웁니다.
-둘 중 하나만 바꿔 두면 업데이트가 동작하지 않으니 이 명령을 쓰는 편이 안전합니다.
+`package.json` 의 `repository` 와 `src-tauri/tauri.conf.json` 의 업데이트 확인 주소를
+한꺼번에 채웁니다. 둘 중 하나만 바꿔 두면 업데이트가 동작하지 않으니 이 명령을
+쓰는 편이 안전합니다.
+
+### 업데이트 서명 키
+
+Tauri 업데이터는 내려받은 설치 파일의 서명을 확인합니다. 키가 없으면 업데이트가
+동작하지 않습니다.
+
+```bash
+npx tauri signer generate -w ~/.tauri/mdviewer.key
+```
+
+- 공개키는 `src-tauri/tauri.conf.json` 의 `plugins.updater.pubkey` 에 넣습니다.
+  (저장소에 올라가도 되는 값입니다)
+- 개인키는 **절대 저장소에 넣지 마세요.** GitHub 저장소의
+  Settings → Secrets and variables → Actions 에 아래 두 개를 등록합니다.
+
+| 시크릿 | 값 |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | 개인키 파일 내용 전체 |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 개인키 암호 (없으면 빈 값) |
+
+키를 잃어버리면 이미 설치된 앱들에 업데이트를 내보낼 수 없습니다. 따로 백업해
+두세요.
 
 ### 올리기
 
@@ -155,9 +195,10 @@ git push origin main
 ```
 
 `main` 에 푸시되면 `.github/workflows/release.yml` 이 Windows 러너에서 설치 파일을
-만들어 GitHub 릴리스에 올립니다. 릴리스와 `v1.4.0` 태그는 electron-builder 가
-직접 만들므로 따로 태그를 밀 필요는 없습니다. 함께 올라가는 `latest.yml` 이
-버전 정보이고, 설치된 앱은 이 파일을 보고 새 버전을 판단합니다.
+만들어 GitHub 릴리스에 올립니다. 릴리스와 `v1.4.0` 태그는 워크플로가 만들므로
+따로 태그를 밀 필요는 없습니다. 함께 올라가는 `latest.json` 이 버전 정보이고,
+설치된 앱은 이 파일을 보고 새 버전을 판단합니다. 서명 파일(`.sig`)도 같이
+올라가며, 앱은 서명이 맞을 때만 설치를 진행합니다.
 
 릴리스는 `package.json` 의 `version` 이 올라간 푸시에서만 만들어집니다. 같은
 버전으로 다시 푸시하면 워크플로가 이미 발행된 릴리스를 확인하고 조용히 넘어가므로,
@@ -165,7 +206,8 @@ git push origin main
 올리세요.** `package.json` 을 손으로 고치면 커밋과 태그가 따로 놀게 됩니다.
 
 별도 토큰은 필요 없습니다. 워크플로가 GitHub이 자동으로 주는 `GITHUB_TOKEN` 을
-씁니다. 저장소가 비공개면 앱이 릴리스를 읽지 못하니 공개로 두어야 합니다.
+씁니다. 서명 키 두 개만 시크릿으로 넣어 두면 됩니다. 저장소가 비공개면 앱이
+릴리스를 읽지 못하니 공개로 두어야 합니다.
 
 ### 앱에서 보이는 모습
 
@@ -173,49 +215,62 @@ git push origin main
 오른쪽 아래에 알림이 뜹니다. **도움말 → 업데이트 확인** 으로 직접 확인하면
 최신이어도 결과를 알려줍니다.
 
-설치 파일이 100MB가 넘으므로 자동으로 받지 않고 먼저 물어봅니다.
-**내려받기** 를 누르면 진행률이 보이고, 끝나면 **지금 다시 시작** 으로 설치하거나
-다음에 앱을 닫을 때 자동으로 설치됩니다. 저장하지 않은 문서가 있으면 다시
-시작하기 전에 먼저 저장합니다.
-
-두 번째 업데이트부터는 함께 올라간 `blockmap` 덕분에 바뀐 부분만 내려받습니다.
+설치 파일이 작아졌지만 흐름은 그대로입니다. 자동으로 받지 않고 먼저 물어봅니다.
+**내려받기** 를 누르면 진행률이 보이고, 끝나면 **지금 다시 시작** 으로 설치합니다.
+저장하지 않은 문서가 있으면 다시 시작하기 전에 먼저 저장합니다.
 
 ### 개발 중에 업데이트 흐름 확인하기
 
-설치본이 아니면 확인을 건너뜁니다. 흐름을 시험해 보려면 프로젝트 루트에
-`dev-app-update.yml` 을 만들고
+개발 빌드에서는 확인을 건너뜁니다. 흐름을 시험해 보려면
+`MD_VIEWER_DEV_UPDATE=1` 을 켠 채로 실행하세요. 그러면 개발 빌드에서도
+`tauri.conf.json` 의 `plugins.updater.endpoints` 주소를 보러 갑니다.
 
-```yaml
-provider: generic
-url: http://127.0.0.1:8099/
+```bash
+MD_VIEWER_DEV_UPDATE=1 npm run dev
 ```
-
-`MD_VIEWER_DEV_UPDATE=1 npm start` 로 실행하면 그 주소의 `latest.yml` 을 봅니다.
 
 ### 서명에 관해
 
-코드 서명 인증서가 없으면 설치 파일이 서명되지 않습니다. 업데이트 자체는
-동작하지만, 설치할 때마다 Windows SmartScreen 경고가 뜹니다. 인증서가 있다면
-`build.win` 에 `certificateFile` 과 `certificatePassword` 를 넣으면 사라집니다.
+여기서 말하는 서명은 두 가지로 나뉩니다.
+
+- **업데이트 서명** — 위에서 만든 Tauri 키. 자동 업데이트에 반드시 필요합니다.
+- **코드 서명** — Windows SmartScreen 경고를 없애는 인증서. 없어도 설치와
+  업데이트는 동작하며, 설치할 때마다 경고가 뜰 뿐입니다. 인증서가 있다면
+  `src-tauri/tauri.conf.json` 의 `bundle.windows` 에 `certificateThumbprint`
+  (또는 `signCommand`) 를 넣으면 사라집니다.
 
 ## 7. 구조
 
 ```
-main.js                 창 생성, 파일 열기·저장, 파일 감시, 메뉴, 설정 저장
-preload.js              마크다운 → 안전한 HTML 변환 (marked + DOMPurify + highlight.js)
-renderer/index.html     화면 구조
-renderer/style.css      테마 토큰, 리딩 레일, 본문 타이포그래피, 편집기 스타일
-renderer/renderer.js    탭 관리, 문서 표시, 부분 갱신, 저장 흐름, 스크롤 동기화
-renderer/help-data.js   도움말에 실리는 마크다운 문법·단축키 목록
-renderer/vendor/        scripts/ 에서 생성되는 편집기 번들 (직접 고치지 않음)
-scripts/editor-entry.js CodeMirror 6 설정 — 문법 강조, 편집 명령
-scripts/build-editor.mjs esbuild 번들 스크립트
-assets/icon.ico         앱 및 파일 연결 아이콘
-.github/workflows/      main 에 푸시되면 설치 파일을 만들어 릴리스에 올리는 작업
+src-tauri/src/main.rs      창, 커맨드, 메뉴 처리, 종료 확인, 시작 순서
+src-tauri/src/menu.rs      상단 메뉴와 단축키
+src-tauri/src/docs.rs      문서 읽기, 마크다운 파일 판별, 실행 인자 해석
+src-tauri/src/settings.rs  테마·글자 크기·화면 구성 저장
+src-tauri/src/watcher.rs   열린 탭의 파일이 바깥에서 바뀌는지 지켜보기
+src-tauri/src/update.rs    GitHub 릴리스 확인·내려받기·설치
+src-tauri/tauri.conf.json  창 설정, CSP, 파일 연결, NSIS, 업데이터 주소·공개키
+src-tauri/capabilities/    화면에 허용하는 권한
+renderer/index.html        화면 구조
+renderer/style.css         테마 토큰, 리딩 레일, 본문 타이포그래피, 편집기 스타일
+renderer/renderer.js       탭 관리, 문서 표시, 부분 갱신, 저장 흐름, 스크롤 동기화
+renderer/help-data.js      도움말에 실리는 마크다운 문법·단축키 목록
+renderer/vendor/           scripts/ 에서 생성되는 번들 (직접 고치지 않음)
+scripts/api-entry.js       window.api — 커맨드 래퍼 + 마크다운 → 안전한 HTML 변환
+scripts/editor-entry.js    CodeMirror 6 설정 — 문법 강조, 편집 명령
+scripts/build-api.mjs      window.api 번들 스크립트
+scripts/build-editor.mjs   편집기 번들 스크립트
+assets/icon.ico            앱 및 파일 연결 아이콘
+.github/workflows/         main 에 푸시되면 설치 파일을 만들어 릴리스에 올리는 작업
 ```
 
-마크다운 파싱은 렌더러가 아니라 preload에서 처리하고, 결과를 DOMPurify로 걸러
-`contextIsolation`을 켠 채로 문서를 표시합니다. 문서 안의 스크립트는 실행되지 않습니다.
+화면 쪽은 `window.api` 하나만 보고 움직입니다. `renderer.js` 는 Rust 를 직접
+부르지 않고, `scripts/api-entry.js` 가 그 표면을 만들어 Tauri 커맨드와 이벤트로
+옮겨 줍니다. 창·파일·메뉴처럼 시스템에 닿는 일은 모두 Rust 쪽에 있습니다.
+
+마크다운 파싱은 화면 쪽에서 하고, 결과를 DOMPurify로 걸러서 표시합니다.
+문서 안의 스크립트는 실행되지 않습니다. 문서에 딸린 로컬 이미지는 Tauri 의
+asset 프로토콜을 거쳐 들어옵니다. WebView2 는 `file://` 을 직접 읽지 못하기
+때문입니다.
 
 열려 있는 탭의 파일은 모두 감시합니다. 다른 프로그램에서 파일이 바뀌면
 그 탭을 수정 중이 아닐 때만 조용히 다시 불러오고, 수정 중이라면 덮어쓰지 않고
@@ -228,13 +283,16 @@ assets/icon.ico         앱 및 파일 연결 아이콘
 
 ## 8. 손볼 만한 곳
 
-- 아이콘 교체: `assets/icon.ico` (256×256 포함 다중 크기 .ico)
-- 앱 이름·ID: `package.json` 의 `build.productName`, `build.appId`
-- 연결할 확장자: `package.json` 의 `build.fileAssociations[0].ext`
+- 아이콘 교체: `assets/icon.ico` (256×256 포함 다중 크기 .ico), `assets/icon.png`
+- 앱 이름·ID: `src-tauri/tauri.conf.json` 의 `productName`, `identifier`
+- 연결할 확장자: `src-tauri/tauri.conf.json` 의 `bundle.fileAssociations[0].ext`
+  (`src-tauri/src/docs.rs` 의 `MD_EXTS` 와 `scripts/api-entry.js` 의 `MD_EXTS` 도 함께)
 - 본문 폭·글꼴: `renderer/style.css` 의 `--measure`, `--font-body`
 - 편집기 색상: `renderer/style.css` 의 `--ed-*` 변수
 - 편집 단축키: `scripts/editor-entry.js` 의 `mdKeys`
+- 메뉴 단축키: `src-tauri/src/menu.rs`
 - GitHub 저장소: `npm run setup:repo -- <계정>/<저장소>`
-- 업데이트 확인 주기: `main.js` 의 `UPDATE_INTERVAL`
+- 업데이트 확인 주기: `src-tauri/src/main.rs` 의 `setup` 안에 있는 `4 * 60 * 60`
+- 파일 감시 주기: `src-tauri/src/watcher.rs` 의 `POLL`
 - 도움말 항목: `renderer/help-data.js` — `syntax`(표기), `desc`(설명),
   `sample`(넣을 예시), `demo`(미리보기용, 없으면 sample) 네 가지로 되어 있습니다

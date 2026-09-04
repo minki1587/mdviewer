@@ -1,6 +1,5 @@
 node_modules/
-dist/
 renderer/vendor/
-dev-app-update.yml
+src-tauri/target/
+src-tauri/gen/
 *.log
-prototype-tauri/src-tauri/target/

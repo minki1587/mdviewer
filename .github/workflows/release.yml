@@ -6,8 +6,12 @@
 # package.json 의 version 이 올라간 푸시에서만 릴리스를 만든다.
 # 같은 버전으로 여러 번 푸시해도 이미 발행된 릴리스가 있으면 조용히 넘어간다.
 #
-# 설치된 앱은 이 릴리스의 latest.yml 을 보고 새 버전을 감지한다.
-# (electron-builder 가 v<version> 태그와 릴리스를 직접 만든다)
+# 설치된 앱은 이 릴리스의 latest.json 을 보고 새 버전을 감지한다.
+# latest.json 은 Tauri 가 만들어 주지 않으므로 여기서 직접 쓴다.
+#
+# 필요한 저장소 시크릿:
+#   TAURI_SIGNING_PRIVATE_KEY           개인키 파일 내용 전체
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  개인키 암호 (없으면 빈 값)
 
 name: release
 
@@ -35,6 +39,20 @@ jobs:
           node-version: 20
           cache: npm
 
+      # windows-latest 러너에는 Rust 가 이미 깔려 있다. 최신 stable 로만 맞춘다.
+      - name: Rust 최신화
+        run: rustup update stable && rustup default stable
+
+      - name: cargo 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
       - name: 버전 읽기
         id: ver
         shell: bash
@@ -42,7 +60,7 @@ jobs:
 
       # 릴리스 존재 여부만 보면 안 된다. 업로드가 중간에 끊겨 exe 만 올라간
       # 릴리스가 남아 있으면, 그걸 "발행 완료"로 오해해 영영 건너뛰게 된다.
-      # 앱이 실제로 읽는 latest.yml 이 붙어 있어야 발행이 끝난 것으로 본다.
+      # 앱이 실제로 읽는 latest.json 이 붙어 있어야 발행이 끝난 것으로 본다.
       - name: 발행이 끝난 버전인지 확인
         id: check
         shell: bash
@@ -50,11 +68,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag="v${{ steps.ver.outputs.version }}"
-          if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx 'latest.yml'; then
-            echo "$tag 에 latest.yml 이 이미 있습니다. 건너뜁니다."
+          if gh release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx 'latest.json'; then
+            echo "$tag 에 latest.json 이 이미 있습니다. 건너뜁니다."
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "$tag 을 발행합니다. (릴리스가 없거나 latest.yml 이 빠져 있음)"
+            echo "$tag 을 발행합니다. (릴리스가 없거나 latest.json 이 빠져 있음)"
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -62,34 +80,68 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: npm ci
 
-      - name: 빌드 후 릴리스에 올리기
+      - name: 빌드
         if: steps.check.outputs.exists == 'false'
-        run: npm run release
+        run: npm run build
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      # 112MB 짜리 exe 업로드 뒤 작은 파일들이 실패하는 일이 실제로 있었다.
-      # exe 만 올라가고 latest.yml 이 빠지면 앱은 새 버전을 영영 보지 못하므로,
-      # 발행 단계가 실패했더라도 빠진 파일을 여기서 다시 올린다.
-      - name: 첨부 파일 점검 (빠진 것은 다시 올림)
-        if: ${{ steps.check.outputs.exists == 'false' && !cancelled() }}
+      # 산출물 이름에 공백이 들어 있으면 GitHub 이 업로드하며 점으로 바꾼다.
+      # 업데이터가 내려받을 주소를 미리 알 수 있어야 하므로 이름을 먼저 고정한다.
+      - name: 산출물 이름 정리 + latest.json 작성
+        if: steps.check.outputs.exists == 'false'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          src="src-tauri/target/release/bundle/nsis"
+          exe="md-viewer-${version}-setup.exe"
+
+          mv "$src/MD Viewer_${version}_x64-setup.exe"     "$src/$exe"
+          mv "$src/MD Viewer_${version}_x64-setup.exe.sig" "$src/$exe.sig"
+
+          node - "$version" "$src" "$exe" <<'JS'
+          const fs = require('node:fs');
+          const [version, dir, exe] = process.argv.slice(2);
+          const repo = process.env.GITHUB_REPOSITORY;
+          const manifest = {
+            version,
+            notes: `MD Viewer ${version}`,
+            pub_date: new Date().toISOString(),
+            platforms: {
+              'windows-x86_64': {
+                signature: fs.readFileSync(`${dir}/${exe}.sig`, 'utf8').trim(),
+                url: `https://github.com/${repo}/releases/download/v${version}/${exe}`,
+              },
+            },
+          };
+          fs.writeFileSync(`${dir}/latest.json`, JSON.stringify(manifest, null, 2) + '\n');
+          console.log(manifest.platforms['windows-x86_64'].url);
+          JS
+
+      - name: 릴리스에 올리기
+        if: steps.check.outputs.exists == 'false'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="v${{ steps.ver.outputs.version }}"
-          exe="md-viewer-${{ steps.ver.outputs.version }}-setup.exe"
-          for f in "$exe" "$exe.blockmap" latest.yml; do
-            if gh release view "$tag" --json assets --jq '.assets[].name' | grep -qx "$f"; then
-              echo "확인  $f"
-            elif [ -f "dist/$f" ]; then
-              echo "누락  $f — 다시 올립니다"
-              gh release upload "$tag" "dist/$f" --clobber
-            else
-              echo "::error::dist/$f 가 없어 올릴 수 없습니다"
-              exit 1
-            fi
+          set -euo pipefail
+          version="${{ steps.ver.outputs.version }}"
+          tag="v$version"
+          src="src-tauri/target/release/bundle/nsis"
+          exe="md-viewer-${version}-setup.exe"
+
+          gh release view "$tag" >/dev/null 2>&1 \
+            || gh release create "$tag" --title "$tag" --notes "MD Viewer $version"
+
+          # latest.json 을 마지막에 올린다. 앞의 업로드가 끊기면 다음 실행이
+          # "발행 미완료" 로 보고 다시 시도할 수 있게 하기 위해서다.
+          for f in "$exe" "$exe.sig" latest.json; do
+            gh release upload "$tag" "$src/$f" --clobber
+            echo "올림  $f"
           done
+
           echo "=== 최종 첨부 목록 ==="
           gh release view "$tag" --json assets --jq '.assets[].name'
 
@@ -99,6 +151,7 @@ jobs:
         with:
           name: windows-installer
           path: |
-            dist/*.exe
-            dist/latest.yml
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/nsis/latest.json
           if-no-files-found: error
