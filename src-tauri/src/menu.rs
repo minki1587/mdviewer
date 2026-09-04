@@ -3,6 +3,13 @@
 //! 눌린 항목은 id 그대로 메뉴 이벤트가 되고, main.rs 가 대부분을
 //! 같은 이름의 이벤트로 렌더러에 넘긴다. 렌더러의 onCommand 는
 //! Electron 때와 똑같은 문자열을 받는다.
+//!
+//! 여기 붙인 accelerator 는 메뉴에 단축키를 적어 주는 역할만 한다고 보면 된다.
+//! WebView2 에 초점이 있는 동안에는 창의 accelerator 표까지 키가 내려오지 않아
+//! 실제로 눌러도 발동하지 않는다(Electron 때와 달라진 점이다). 그래서 실제
+//! 판정은 scripts/api-entry.js 의 KEYS 가 맡는다. 두 경로는 초점 위치에 따라
+//! 갈리므로 한 번의 입력이 두 번 실행되지는 않는다.
+//! 단축키를 바꿀 때는 표시(여기)와 동작(KEYS)을 함께 고쳐야 한다.
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, SubmenuBuilder},

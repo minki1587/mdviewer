@@ -317,6 +317,18 @@ fn reveal(path: String) {
     let _ = tauri_plugin_opener::reveal_item_in_dir(PathBuf::from(path));
 }
 
+/// F12. 메뉴의 같은 항목과 하는 일이 같다.
+#[tauri::command]
+fn toggle_devtools(app: AppHandle) {
+    if let Some(win) = main_window(&app) {
+        if win.is_devtools_open() {
+            win.close_devtools();
+        } else {
+            win.open_devtools();
+        }
+    }
+}
+
 #[tauri::command]
 fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
@@ -535,6 +547,7 @@ fn main() {
             open_local,
             reveal,
             app_version,
+            toggle_devtools,
             system_prefers_dark,
             get_settings,
             set_settings,

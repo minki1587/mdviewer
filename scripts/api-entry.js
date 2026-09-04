@@ -172,11 +172,22 @@ function render(markdown, baseDir) {
  *
  * listen() 은 비동기라 등록이 끝나기 전에 백엔드가 먼저 보낼 수 있다.
  * ready() 가 등록이 모두 끝난 뒤에 백엔드를 깨우도록 약속을 모아 둔다.
+ *
+ * 구독자를 여기에도 들고 있는 이유는 단축키 때문이다. 아래 wireKeys 를 보라.
  * ------------------------------------------------------------------ */
 const subscribing = [];
+const subscribers = new Map();          // 이벤트 이름 -> 콜백들
 
 function on(event, handler) {
-  subscribing.push(listen(event, handler));
+  const list = subscribers.get(event) || [];
+  list.push(handler);
+  subscribers.set(event, list);
+  subscribing.push(listen(event, (e) => deliver(event, e.payload)));
+}
+
+/** 백엔드에서 왔든 키보드에서 왔든 같은 자리로 흘려보낸다. */
+function deliver(event, payload) {
+  for (const handler of subscribers.get(event) || []) handler({ payload });
 }
 
 /** 메뉴에서 오는 문서/탭 명령은 이름이 그대로 이벤트가 되어 온다. */
@@ -186,6 +197,68 @@ const COMMANDS = [
   'edit:undo', 'edit:redo', 'edit:find', 'edit:bold', 'edit:italic', 'edit:link',
   'help:syntax', 'help:keys',
 ];
+
+/* ------------------------------------------------------------------ *
+ * 단축키
+ *
+ * Electron 은 메뉴에 붙인 accelerator 가 창 전체에서 먹었지만, WebView2 에
+ * 초점이 있을 때는 창의 accelerator 표까지 키가 내려가지 않는다. 그래서
+ * 메뉴 쪽에는 보이기용 힌트만 두고, 실제 판정은 여기서 한다.
+ * 화면 전체에서 키를 한 곳에서만 해석하므로 두 번 실행될 일이 없다.
+ *
+ * 거품 단계에서 듣고 defaultPrevented 를 먼저 살핀다. CodeMirror 가 이미
+ * 처리한 키(Ctrl+B, Ctrl+F, Ctrl+Z …)를 가로채지 않기 위해서다.
+ * ------------------------------------------------------------------ */
+
+/** [ctrl, shift, alt, 키] -> 할 일 */
+const KEYS = [
+  ['c..', 'n', () => deliver('doc:new')],
+  ['c..', 'o', () => invoke('pick_files')],
+  ['c..', 's', () => deliver('doc:save')],
+  ['cs.', 's', () => deliver('doc:save-as')],
+  ['c.a', 's', () => deliver('doc:save-all')],
+  ['c..', 'r', () => deliver('doc:reload')],
+  ['c..', 'w', () => deliver('tab:close')],
+
+  ['c..', 'z', () => deliver('edit:undo')],
+  ['cs.', 'z', () => deliver('edit:redo')],
+  ['c..', 'y', () => deliver('edit:redo')],
+  ['c..', 'f', () => deliver('edit:find')],
+  ['c..', 'b', () => deliver('edit:bold')],
+  ['c..', 'i', () => deliver('edit:italic')],
+  ['c..', 'k', () => deliver('edit:link')],
+
+  ['c..', 'e', () => deliver('view:mode', 'toggle')],
+  ['cs.', 'e', () => deliver('view:mode', 'split')],
+  ['c..', 'tab', () => deliver('tab:next')],
+  ['cs.', 'tab', () => deliver('tab:prev')],
+
+  ['c..', '=', () => deliver('view:zoom', 1)],
+  ['c..', '+', () => deliver('view:zoom', 1)],
+  ['c..', '-', () => deliver('view:zoom', -1)],
+  ['c..', '0', () => deliver('view:zoom', 0)],
+
+  ['c..', '\\', () => deliver('view:toggle-toc')],
+  ['c..', 'd', () => deliver('view:toggle-theme')],
+
+  ['...', 'f1', () => deliver('help:syntax')],
+  ['...', 'f12', () => invoke('toggle_devtools')],
+];
+
+function wireKeys() {
+  window.addEventListener('keydown', (e) => {
+    if (e.defaultPrevented) return;              // CodeMirror 가 이미 처리했다
+    const mods = `${e.ctrlKey || e.metaKey ? 'c' : '.'}${e.shiftKey ? 's' : '.'}${e.altKey ? 'a' : '.'}`;
+    const key = e.key.toLowerCase();
+    for (const [want, k, run] of KEYS) {
+      if (want !== mods || k !== key) continue;
+      e.preventDefault();
+      e.stopPropagation();
+      run();
+      return;
+    }
+  });
+}
 
 /* ------------------------------------------------------------------ *
  * 파일 끌어다 놓기
@@ -217,6 +290,7 @@ window.api = {
 
   ready: () => {
     wireDragDrop();
+    wireKeys();
     Promise.allSettled(subscribing).then(() => invoke('app_ready'));
   },
 
