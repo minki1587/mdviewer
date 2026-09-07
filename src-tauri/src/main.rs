@@ -592,6 +592,12 @@ fn update_error_text(raw: &str) -> String {
     if lower.contains("404") || lower.contains("no published") {
         return "아직 올라온 릴리스가 없습니다.".into();
     }
+    /* 릴리스는 있는데 latest.json 이 안 붙어 있을 때 플러그인이 내는 말이다.
+       ("Could not fetch a valid release JSON from the remote")
+       빌드에서 업데이터 산출물을 만들지 않으면 이 상태가 된다. */
+    if lower.contains("release json") {
+        return "릴리스에서 업데이트 정보(latest.json)를 찾지 못했습니다.".into();
+    }
     if lower.contains("dns") || lower.contains("connect") || lower.contains("timed out") {
         return "네트워크에 연결할 수 없습니다.".into();
     }

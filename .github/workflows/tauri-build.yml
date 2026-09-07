@@ -51,8 +51,10 @@ jobs:
       - name: Tauri 빌드
         run: npx tauri build
         env:
-          # 서명 키가 없으면 업데이터 산출물(latest.json)은 만들어지지 않지만
-          # 앱 자체는 정상적으로 빌드된다. 키는 릴리스 단계에서 넣는다.
+          # bundle.createUpdaterArtifacts 가 켜져 있으므로 빌드가 업데이터
+          # 산출물(.nsis.zip)에 서명한다. 키가 없으면 그 단계에서 실패한다.
+          # 릴리스 때만이 아니라 여기서도 필요하다 — 태그를 밀기 전에
+          # 서명 경로가 살아 있는지 이 워크플로가 먼저 확인해 준다.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 

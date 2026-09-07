@@ -32,6 +32,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "copyright": "Copyright © 2026",
     "shortDescription": "마크다운 뷰어 겸 편집기",
