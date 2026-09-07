@@ -3,4 +3,6 @@ dist/
 renderer/vendor/
 dev-app-update.yml
 *.log
+src-tauri/target/
+src-tauri/gen/
 prototype-tauri/src-tauri/target/
