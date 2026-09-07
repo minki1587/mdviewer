@@ -180,6 +180,34 @@ git push origin main
 별도 토큰은 필요 없습니다. 워크플로가 GitHub이 자동으로 주는 `GITHUB_TOKEN` 을
 씁니다. 저장소가 비공개면 앱이 릴리스를 읽지 못하니 공개로 두어야 합니다.
 
+### 업데이터 서명 키
+
+업데이트 정보 파일(`latest.json`)은 개인키로 서명되고, 앱은 `tauri.conf.json` 의
+`plugins.updater.pubkey` 로 그 서명을 검증합니다. **이 둘이 짝이 맞지 않으면 빌드와
+릴리스는 멀쩡히 끝나는데 설치된 앱만 업데이트를 거부합니다.** 발행한 뒤에야 알게
+되는 종류의 실패라, 빌드 전에 `scripts/check-signing-key.mjs` 가 키·암호·`pubkey`
+셋을 한 번에 확인하고 어긋나면 이유를 한 줄로 남기고 멈춥니다.
+
+저장소 시크릿 두 개를 씁니다.
+
+| 시크릿 | 값 |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | 개인키 파일 내용 그대로 (base64 한 줄) |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 키를 만들 때 쓴 암호. 암호 없는 키라면 이 시크릿을 만들지 마세요 |
+
+붙여넣을 때 **UTF-8 BOM 이 섞이지 않게** 하세요. 메모장이나 PowerShell 리디렉션을
+거치면 값 앞에 BOM(`EF BB BF`)이 붙어 base64 디코딩이 첫 글자에서 깨집니다.
+
+키를 새로 만들려면:
+
+```bash
+npx tauri signer generate -p "" -w ~/.tauri/mdviewer-updater.key
+```
+
+`.pub` 파일 내용을 `pubkey` 에 넣고, 개인키 파일 내용을 시크릿에 넣습니다.
+**키를 바꾸면 이미 설치된 판은 새 릴리스의 서명을 검증하지 못해 자동으로 갱신되지
+않습니다.** 그 판만 한 번 손으로 설치하면 그 뒤부터는 다시 자동으로 올라갑니다.
+
 ### 앱에서 보이는 모습
 
 앱을 켜고 8초 뒤, 그리고 4시간마다 조용히 확인합니다. 새 버전이 있을 때만

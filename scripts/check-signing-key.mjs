@@ -18,8 +18,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const CONF = new URL('../src-tauri/tauri.conf.json', import.meta.url);
+
+/* npx 나 .bin/tauri.cmd 대신 CLI 의 진입 스크립트를 node 로 직접 부른다.
+   윈도에서 .cmd 를 실행하려면 shell 을 켜야 하고, 그러면 인자가 이스케이프
+   되지 않는다는 경고가 붙는다. 셸을 거치지 않는 편이 조용하고 안전하다. */
+const TAURI_CLI = fileURLToPath(new URL('../node_modules/@tauri-apps/cli/tauri.js', import.meta.url));
 
 /** GitHub Actions 는 ::error:: 로 시작하는 줄을 실행 화면에 띄운다. */
 function fail(message) {
@@ -66,15 +72,27 @@ const probe = join(dir, 'probe.txt');
 writeFileSync(probe, 'signing key probe\n');
 
 try {
-  execFileSync('npx', ['tauri', 'signer', 'sign', probe], {
+  execFileSync(process.execPath, [TAURI_CLI, 'signer', 'sign', probe], {
     stdio: ['ignore', 'ignore', 'pipe'],
-    shell: process.platform === 'win32',
-    env: process.env,                   // 키와 암호는 환경변수로만 넘어간다
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      /* 암호 변수가 아예 없으면 CLI 가 대화식으로 물어보고, 그대로 멈춘다.
+         빈 문자열이라도 반드시 정의해 두어야 한다. 암호 없는 키의 암호는
+         빈 문자열이다. */
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? '',
+    },
   });
 } catch (err) {
   const detail = String(err.stderr || err.message).split('\n').slice(-4).join(' ').trim();
   rmSync(dir, { recursive: true, force: true });
 
+  if (err.killed || err.code === 'ETIMEDOUT') {
+    fail(
+      '시험 서명이 60초 안에 끝나지 않았습니다. 서명 CLI 가 입력을 기다리는 중일 수 있습니다. ' +
+      'TAURI_SIGNING_PRIVATE_KEY 와 TAURI_SIGNING_PRIVATE_KEY_PASSWORD 가 모두 정의돼 있는지 확인하세요.',
+    );
+  }
   if (/password/i.test(detail)) {
     fail(
       '개인키 암호가 맞지 않습니다. TAURI_SIGNING_PRIVATE_KEY_PASSWORD 시크릿을 ' +
