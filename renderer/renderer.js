@@ -482,6 +482,76 @@ async function saveAll() {
   return true;
 }
 
+/* ================================================================ 내보내기
+ *
+ * 종이 배치는 style.css 의 @media print 가 맡는다. 여기서 하는 일은
+ * 인쇄 대화상자를 열기 전에 화면과 종이의 차이 세 가지를 메우는 것뿐이다.
+ *   1. 편집 중이면 미리보기가 낡아 있다 — 종이에 나갈 것은 그린 결과다.
+ *   2. 접어 둔 <details> 는 펼치지 않으면 내용이 통째로 빠진다.
+ *   3. lazy 이미지는 아직 화면에 안 나왔으면 빈 자리로 찍힌다.
+ *
+ * 인쇄 대화상자에서 "PDF로 저장"을 고르면 그대로 PDF 파일이 된다.
+ * ------------------------------------------------------------------ */
+
+const MD_SUFFIX = /\.(md|markdown|mdown|mkd|mdtext|mdtxt)$/i;
+
+let exporting = false;
+
+/** 아직 안 실린 이미지를 기다린다. 없거나 늦으면 그냥 진행한다. */
+function waitForImages(root, ms = 4000) {
+  const pending = [...root.querySelectorAll('img')].filter((img) => !img.complete);
+  if (!pending.length) return Promise.resolve();
+
+  const settled = pending.map((img) => new Promise((done) => {
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+  }));
+  return Promise.race([Promise.all(settled), new Promise((done) => setTimeout(done, ms))]);
+}
+
+async function exportPdf() {
+  const t = active();
+  if (!t || exporting) return;
+  if (!t.text.trim()) { toast('내보낼 내용이 없습니다'); return; }
+
+  if (t.stale) renderPreview();
+
+  exporting = true;
+  const title = document.title;
+  const folded = [...docEl.querySelectorAll('details:not([open])')];
+  const lazy = [...docEl.querySelectorAll('img[loading="lazy"]')];
+
+  // 인쇄 대화상자가 제안하는 파일 이름은 document.title 에서 온다
+  document.title = t.name.replace(MD_SUFFIX, '') || '제목 없음';
+  for (const d of folded) d.open = true;
+  for (const img of lazy) img.setAttribute('loading', 'eager');
+
+  let restored = false;
+  const restore = () => {
+    if (restored) return;
+    restored = true;
+    document.title = title;
+    for (const d of folded) d.open = false;
+    for (const img of lazy) img.setAttribute('loading', 'lazy');
+    exporting = false;
+  };
+
+  // 인쇄가 끝나면(또는 취소하면) 화면을 원래대로 돌린다.
+  // window.print() 는 대화상자가 닫힐 때까지 스크립트를 붙잡아 두므로
+  // 보통은 afterprint 가 먼저 오고, 그렇지 않은 런타임을 위해 뒤도 막아 둔다.
+  window.addEventListener('afterprint', restore, { once: true });
+
+  try {
+    await waitForImages(docEl);
+    window.print();
+  } catch (err) {
+    toast('인쇄를 시작하지 못했습니다');
+    restore();
+    return;
+  }
+  setTimeout(restore, 1000);
+}
+
 function updateStatus() {
   if (mode === 'read') return;
   const s = editor.stats();
@@ -1089,6 +1159,7 @@ $('#btn-new').addEventListener('click', () => newTab());
 $('#empty-open').addEventListener('click', () => api.pickFiles());
 btnTheme.addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));
 btnToc.addEventListener('click', () => applyPin(!pinned));
+$('#btn-export').addEventListener('click', () => exportPdf());
 modesEl.addEventListener('click', (e) => {
   const b = e.target.closest('button[data-mode]');
   if (b) setMode(b.dataset.mode);
@@ -1147,6 +1218,7 @@ api.onCommand(async (name) => {
     case 'doc:save':     saveActive(); break;
     case 'doc:save-as':  saveActive({ as: true }); break;
     case 'doc:save-all': saveAll(); break;
+    case 'doc:export-pdf': exportPdf(); break;
     case 'doc:reveal':   if (t?.path) api.reveal(t.path); break;
     case 'doc:reload': {
       if (!t?.path) break;

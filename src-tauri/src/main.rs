@@ -421,6 +421,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&item("doc:save-as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?)
         .item(&item("doc:save-all", "모두 저장", Some("CmdOrCtrl+Alt+S"))?)
         .separator()
+        .item(&item("doc:export-pdf", "PDF로 내보내기…", Some("CmdOrCtrl+P"))?)
+        .separator()
         .item(&item("doc:reload", "디스크에서 다시 불러오기", Some("CmdOrCtrl+R"))?)
         .item(&item("doc:reveal", "탐색기에서 보기", None)?)
         .separator()

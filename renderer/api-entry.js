@@ -366,6 +366,7 @@ const tauriApi = {
   onCommand: (cb) => {
     const names = [
       'doc:new', 'doc:save', 'doc:save-as', 'doc:save-all', 'doc:reload', 'doc:reveal',
+      'doc:export-pdf',
       'tab:close', 'tab:close-others', 'tab:next', 'tab:prev',
       'edit:undo', 'edit:redo', 'edit:find', 'edit:bold', 'edit:italic', 'edit:link',
       'help:syntax', 'help:keys',

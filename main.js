@@ -345,6 +345,8 @@ function buildMenu() {
         { label: '다른 이름으로 저장…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('doc:save-as') },
         { label: '모두 저장', accelerator: 'CmdOrCtrl+Alt+S', click: () => send('doc:save-all') },
         { type: 'separator' },
+        { label: 'PDF로 내보내기…', accelerator: 'CmdOrCtrl+P', click: () => send('doc:export-pdf') },
+        { type: 'separator' },
         { label: '디스크에서 다시 불러오기', accelerator: 'CmdOrCtrl+R', click: () => send('doc:reload') },
         { label: '탐색기에서 보기', click: () => send('doc:reveal') },
         { type: 'separator' },

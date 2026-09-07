@@ -122,6 +122,7 @@ window.HELP_KEYS = [
       ['Ctrl+S', '저장'],
       ['Ctrl+Shift+S', '다른 이름으로 저장'],
       ['Ctrl+Alt+S', '모두 저장'],
+      ['Ctrl+P', 'PDF로 내보내기 (인쇄 대화상자에서 “PDF로 저장”)'],
       ['Ctrl+W', '탭 닫기'],
       ['Ctrl+Tab', '다음 탭'],
       ['Ctrl+Shift+Tab', '이전 탭'],
