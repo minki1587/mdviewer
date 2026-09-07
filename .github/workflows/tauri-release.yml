@@ -7,8 +7,8 @@
 # 설치된 앱은 tauri.conf.json 의 endpoints 가 가리키는
 # releases/latest/download/latest.json 을 보고 새 버전을 판단한다.
 #
-# Electron 판의 release.yml 은 main 브랜치 푸시에만 반응하므로
-# 태그를 밀어도 함께 돌지 않는다.
+# main 푸시에는 tauri-build.yml 이 컴파일만 확인하고, 발행은 태그를 민
+# 이 워크플로만 한다.
 
 name: tauri-release
 

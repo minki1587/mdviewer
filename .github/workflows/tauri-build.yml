@@ -1,14 +1,23 @@
 # Tauri 판을 windows 러너에서 빌드한다.
 #
 # 로컬에 Rust 와 MSVC 빌드 도구가 없어 여기서 컴파일을 검증한다.
-# 이식이 끝나 main 으로 합칠 때 이 파일이 release.yml 을 대신하게 된다.
+# Electron 판의 release.yml 을 대신하는 파일이라, 여기서는 릴리스를 만들지
+# 않고 빌드가 되는지만 본다. 실제 발행은 태그를 밀 때 tauri-release.yml 이
+# 한다.
+#
+#   git tag v2.0.0
+#   git push origin v2.0.0
 
 name: tauri-build
 
 on:
   push:
     branches:
-      - tauri-port
+      - main
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+  pull_request:
   workflow_dispatch:
 
 permissions:
