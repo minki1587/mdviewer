@@ -12,29 +12,47 @@
 
 ## 1. 개발 환경에서 실행
 
-Node.js 20 이상이 필요합니다.
+배포되는 앱은 **Tauri 2** 판입니다. Node.js 20 이상과 Rust 툴체인,
+Windows 라면 MSVC 빌드 도구가 필요합니다.
 
 ```bash
 npm install
-npm run dev        # sample.md 를 열면서 실행
-npm start          # 빈 화면으로 실행
+npm run tauri:dev
 ```
 
-`npm start` / `npm run dev` 는 실행 전에 편집기 번들(`renderer/vendor/editor.js`)을
-자동으로 다시 만듭니다. 따로 빌드할 필요는 없습니다.
+화면(`renderer/`)은 두 런타임에서 그대로 돌아갑니다. Rust 를 깔지 않고 화면만
+손볼 때는 Electron 판으로 띄우는 편이 빠릅니다.
+
+```bash
+npm run dev        # sample.md 를 열면서 실행 (Electron)
+npm start          # 빈 화면으로 실행 (Electron)
+```
+
+두 갈래가 갈리는 곳은 `window.api` 하나뿐입니다. Electron 은 `preload.js` 가,
+Tauri 는 `renderer/api-entry.js` 가 같은 이름·같은 모양의 함수를 만들어 주고,
+`renderer.js` 는 자기가 어느 쪽에서 도는지 모릅니다.
+
+번들은 실행 전에 자동으로 다시 만들어집니다. 직접 부를 일은 거의 없습니다.
+
+```bash
+npm run build:editor   # renderer/vendor/editor.js (CodeMirror)
+npm run build:api      # renderer/vendor/api.js (Tauri 판 window.api)
+npm run build:web      # 위 둘
+```
 
 ## 2. 설치 파일 만들기
 
 Windows에서 실행해야 NSIS 설치 파일이 만들어집니다.
 
 ```bash
-npm run dist
+npm run tauri:build
 ```
 
-`dist/MD Viewer-1.0.0-setup.exe` 가 생성됩니다.
-설치 중 폴더 선택이 가능하고, 관리자 권한 없이 현재 사용자 계정에만 설치됩니다.
+`src-tauri/target/release/bundle/nsis/MD Viewer_<버전>_x64-setup.exe` 가 생깁니다.
+설치 중 폴더를 고를 수 있고, 관리자 권한 없이 현재 사용자 계정에만 설치됩니다.
+설치 파일은 2.5MB 남짓입니다 — Electron 판의 112MB 를 Tauri 로 옮기며 줄인 값입니다.
 
-실행 파일만 확인하려면 `npm run dist:dir` → `dist/win-unpacked/MD Viewer.exe`.
+Electron 판 설치 파일이 필요하면 `npm run dist` (→ `dist/`) 가 아직 남아 있습니다.
 
 ## 3. `.md` 기본 프로그램으로 지정
 
@@ -147,8 +165,12 @@ Windows 10/11은 보안상 기본 앱을 프로그램이 스스로 바꾸지 못
 npm run setup:repo -- <내계정>/md-viewer
 ```
 
-`package.json` 의 `repository` 와 `build.publish` 를 한꺼번에 채웁니다.
-둘 중 하나만 바꿔 두면 업데이트가 동작하지 않으니 이 명령을 쓰는 편이 안전합니다.
+`package.json` 의 `repository` 와 `build.publish`(Electron 판 발행 설정)를
+한꺼번에 채웁니다.
+
+**Tauri 판이 보는 주소는 여기서 바뀌지 않습니다.** 설치된 앱은
+`src-tauri/tauri.conf.json` 의 `plugins.updater.endpoints` 를 보므로,
+저장소를 옮겼다면 그 주소도 손으로 고쳐야 합니다.
 
 ### 올리기
 
@@ -162,20 +184,28 @@ git push -u origin main
 
 ### 새 버전 내보내기
 
+**발행은 태그를 밀 때만** 일어납니다. `main` 에 푸시하면
+`.github/workflows/tauri-build.yml` 이 컴파일과 서명 경로만 확인하고 끝냅니다.
+
+버전은 세 곳에 있고 **모두 같아야 합니다.** `npm version` 은 `package.json` 만
+고치므로 나머지 둘은 손으로 맞춰야 합니다.
+
+| 파일 | 자리 |
+|---|---|
+| `package.json` | `version` |
+| `src-tauri/tauri.conf.json` | `version` — 앱이 자기 버전으로 쓰는 값 |
+| `src-tauri/Cargo.toml` | `[package] version` |
+
 ```bash
-npm version 1.4.0        # package.json 갱신 + 커밋 + v1.4.0 태그
-git push origin main
+# 세 파일의 버전을 2.1.0 으로 맞춘 뒤
+git commit -am "2.1.0"
+git tag v2.1.0
+git push origin main v2.1.0
 ```
 
-`main` 에 푸시되면 `.github/workflows/release.yml` 이 Windows 러너에서 설치 파일을
-만들어 GitHub 릴리스에 올립니다. 릴리스와 `v1.4.0` 태그는 electron-builder 가
-직접 만들므로 따로 태그를 밀 필요는 없습니다. 함께 올라가는 `latest.yml` 이
-버전 정보이고, 설치된 앱은 이 파일을 보고 새 버전을 판단합니다.
-
-릴리스는 `package.json` 의 `version` 이 올라간 푸시에서만 만들어집니다. 같은
-버전으로 다시 푸시하면 워크플로가 이미 발행된 릴리스를 확인하고 조용히 넘어가므로,
-문서 수정 같은 커밋이 빌드를 돌리지 않습니다. **버전은 `npm version` 으로만
-올리세요.** `package.json` 을 손으로 고치면 커밋과 태그가 따로 놀게 됩니다.
+태그가 올라가면 `.github/workflows/tauri-release.yml` 이 Windows 러너에서 설치
+파일과 **`latest.json`** 을 만들어 GitHub 릴리스에 올립니다. 설치된 앱은 그
+`latest.json` 을 보고 새 버전을 판단합니다.
 
 별도 토큰은 필요 없습니다. 워크플로가 GitHub이 자동으로 주는 `GITHUB_TOKEN` 을
 씁니다. 저장소가 비공개면 앱이 릴리스를 읽지 못하니 공개로 두어야 합니다.
@@ -214,49 +244,48 @@ npx tauri signer generate -p "" -w ~/.tauri/mdviewer-updater.key
 오른쪽 아래에 알림이 뜹니다. **도움말 → 업데이트 확인** 으로 직접 확인하면
 최신이어도 결과를 알려줍니다.
 
-설치 파일이 100MB가 넘으므로 자동으로 받지 않고 먼저 물어봅니다.
-**내려받기** 를 누르면 진행률이 보이고, 끝나면 **지금 다시 시작** 으로 설치하거나
-다음에 앱을 닫을 때 자동으로 설치됩니다. 저장하지 않은 문서가 있으면 다시
-시작하기 전에 먼저 저장합니다.
+묻지 않고 받아 두지는 않습니다. **내려받기** 를 누르면 진행률이 보이고, 끝나면
+**지금 다시 시작** 으로 설치합니다. 저장하지 않은 문서가 있으면 다시 시작하기
+전에 먼저 저장합니다.
 
-두 번째 업데이트부터는 함께 올라간 `blockmap` 덕분에 바뀐 부분만 내려받습니다.
+### 코드 서명에 관해
 
-### 개발 중에 업데이트 흐름 확인하기
-
-설치본이 아니면 확인을 건너뜁니다. 흐름을 시험해 보려면 프로젝트 루트에
-`dev-app-update.yml` 을 만들고
-
-```yaml
-provider: generic
-url: http://127.0.0.1:8099/
-```
-
-`MD_VIEWER_DEV_UPDATE=1 npm start` 로 실행하면 그 주소의 `latest.yml` 을 봅니다.
-
-### 서명에 관해
-
-코드 서명 인증서가 없으면 설치 파일이 서명되지 않습니다. 업데이트 자체는
-동작하지만, 설치할 때마다 Windows SmartScreen 경고가 뜹니다. 인증서가 있다면
-`build.win` 에 `certificateFile` 과 `certificatePassword` 를 넣으면 사라집니다.
+업데이터 서명(위)과는 다른 이야기입니다. 코드 서명 인증서가 없으면 설치 파일이
+서명되지 않아, 설치할 때마다 Windows SmartScreen 경고가 뜹니다. 업데이트 동작
+자체는 영향받지 않습니다. 인증서가 있다면 `tauri.conf.json` 의
+`bundle.windows` 에 `certificateThumbprint` 와 `timestampUrl` 을 넣으면 됩니다.
+서명을 직접 다루려면 `signCommand` 로 명령을 지정할 수도 있습니다.
 
 ## 7. 구조
 
 ```
-main.js                 창 생성, 파일 열기·저장, 파일 감시, 메뉴, 설정 저장
-preload.js              마크다운 → 안전한 HTML 변환 (marked + DOMPurify + highlight.js)
-renderer/index.html     화면 구조
-renderer/style.css      테마 토큰, 리딩 레일, 본문 타이포그래피, 편집기 스타일, 인쇄 배치
-renderer/renderer.js    탭 관리, 문서 표시, 부분 갱신, 저장 흐름, 스크롤 동기화
-renderer/help-data.js   도움말에 실리는 마크다운 문법·단축키 목록
-renderer/vendor/        scripts/ 에서 생성되는 편집기 번들 (직접 고치지 않음)
-scripts/editor-entry.js CodeMirror 6 설정 — 문법 강조, 편집 명령
-scripts/build-editor.mjs esbuild 번들 스크립트
-assets/icon.ico         앱 및 파일 연결 아이콘
-.github/workflows/      main 에 푸시되면 설치 파일을 만들어 릴리스에 올리는 작업
+renderer/index.html      화면 구조
+renderer/style.css       테마 토큰, 리딩 레일, 본문 타이포그래피, 편집기, 인쇄 배치
+renderer/renderer.js     탭 관리, 문서 표시, 부분 갱신, 저장 흐름, 스크롤 동기화, 내보내기
+renderer/help-data.js    도움말에 실리는 마크다운 문법·단축키 목록
+renderer/api-entry.js    Tauri 판 window.api — 마크다운 변환, 명령 호출, 대화상자
+renderer/vendor/         scripts/ 가 만들어 내는 번들 (직접 고치지 않음)
+
+src-tauri/src/main.rs    창 생성, 파일 열기·저장, 파일 감시, 메뉴, 설정, 자동 업데이트
+src-tauri/tauri.conf.json  앱 이름·버전·아이콘·확장자 연결·CSP·업데이터 주소와 공개키
+
+main.js                  Electron 판 메인 (같은 일을 하는 다른 런타임)
+preload.js               Electron 판 window.api
+
+scripts/editor-entry.js  CodeMirror 6 설정 — 문법 강조, 편집 명령
+scripts/build-editor.mjs esbuild 번들 스크립트 (편집기)
+scripts/build-api.mjs    esbuild 번들 스크립트 (Tauri 판 api)
+scripts/check-signing-key.mjs  업데이터 서명 키·암호·공개키가 맞는지 확인
+assets/icon.ico          앱 및 파일 연결 아이콘
+.github/workflows/       main 푸시는 빌드 검증, 태그는 릴리스 발행
 ```
 
-마크다운 파싱은 렌더러가 아니라 preload에서 처리하고, 결과를 DOMPurify로 걸러
-`contextIsolation`을 켠 채로 문서를 표시합니다. 문서 안의 스크립트는 실행되지 않습니다.
+같은 화면이 두 런타임 위에서 돕니다. 갈리는 곳은 `window.api` 하나뿐이라
+`renderer.js` 는 자기가 어디서 도는지 모릅니다. Tauri 판은 `renderer/api-entry.js`
+가, Electron 판은 `preload.js` 가 같은 이름·같은 모양의 함수를 만들어 줍니다.
+
+마크다운 파싱은 그 api 계층에서 처리하고, 결과를 DOMPurify로 걸러서 표시합니다.
+문서 안의 스크립트는 실행되지 않습니다.
 
 열려 있는 탭의 파일은 모두 감시합니다. 다른 프로그램에서 파일이 바뀌면
 그 탭을 수정 중이 아닐 때만 조용히 다시 불러오고, 수정 중이라면 덮어쓰지 않고
@@ -269,13 +298,15 @@ assets/icon.ico         앱 및 파일 연결 아이콘
 
 ## 8. 손볼 만한 곳
 
-- 아이콘 교체: `assets/icon.ico` (256×256 포함 다중 크기 .ico)
-- 앱 이름·ID: `package.json` 의 `build.productName`, `build.appId`
-- 연결할 확장자: `package.json` 의 `build.fileAssociations[0].ext`
+- 아이콘 교체: `src-tauri/icons/` (Electron 판은 `assets/icon.ico`)
+- 앱 이름·ID: `src-tauri/tauri.conf.json` 의 `productName`, `identifier`
+- 연결할 확장자: `src-tauri/tauri.conf.json` 의 `bundle.fileAssociations[0].ext`
 - 본문 폭·글꼴: `renderer/style.css` 의 `--measure`, `--font-body`
 - 편집기 색상: `renderer/style.css` 의 `--ed-*` 변수
+- 인쇄 여백·글자 크기: `renderer/style.css` 의 `@page` 와 `@media print`
 - 편집 단축키: `scripts/editor-entry.js` 의 `mdKeys`
-- GitHub 저장소: `npm run setup:repo -- <계정>/<저장소>`
-- 업데이트 확인 주기: `main.js` 의 `UPDATE_INTERVAL`
+- 메뉴 항목·단축키: `src-tauri/src/main.rs` 의 `build_menu`
+- 업데이트 확인 주기: `src-tauri/src/main.rs` 의 `main` 안 (시작 8초 뒤, 이후 4시간마다)
+- 업데이트 주소: `src-tauri/tauri.conf.json` 의 `plugins.updater.endpoints`
 - 도움말 항목: `renderer/help-data.js` — `syntax`(표기), `desc`(설명),
   `sample`(넣을 예시), `demo`(미리보기용, 없으면 sample) 네 가지로 되어 있습니다
