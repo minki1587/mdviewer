@@ -61,6 +61,12 @@
     <main id="scroller" tabindex="-1">
       <article id="doc" class="markdown"></article>
 
+      <!-- 코드 블록 복사. #doc 바깥에 두어야 미리보기 블록 비교가 어긋나지
+           않는다 — 본문 안에 단추를 심으면 그려낸 HTML 과 화면이 달라진다. -->
+      <button id="copy-code" class="ghost" type="button" hidden title="코드 복사" aria-label="코드 복사">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 2.5h7A1.5 1.5 0 0 1 16 4v9h-1.6V4.1H7.5zM5 5.5h6.5A1.5 1.5 0 0 1 13 7v8.5a1.5 1.5 0 0 1-1.5 1.5H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5m.1 1.6v8.3h6.3V7.1z"/></svg>
+      </button>
+
       <section id="empty">
         <div class="empty-mark" aria-hidden="true">
           <span>#</span><span>##</span><span>###</span>

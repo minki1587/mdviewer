@@ -247,6 +247,14 @@ function create({ parent, doc = '', onChange, onScroll, onSave }) {
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
       }
     },
+    /** 문서의 [from, to) 만 바꾼다. 읽기 화면에서 할 일 체크를 눌렀을 때
+        한 글자만 고치려고 쓴다 — 통째로 갈아 끼우면 되돌리기 한 번에 문서
+        전체가 되돌아가고 커서 자리도 잃는다. */
+    replaceRange(from, to, insert) {
+      const len = view.state.doc.length;
+      if (from < 0 || to > len || from > to) return;
+      view.dispatch({ changes: { from, to, insert } });
+    },
     focus: () => view.focus(),
     scrollEl: () => view.scrollDOM,
     undo: () => undo(view),

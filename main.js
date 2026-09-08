@@ -340,6 +340,15 @@ function buildMenu() {
       submenu: [
         { label: '새 문서', accelerator: 'CmdOrCtrl+N', click: () => send('doc:new') },
         { label: '열기…', accelerator: 'CmdOrCtrl+O', click: showOpenDialog },
+        {
+          label: '최근 문서',
+          submenu: recentPaths.length
+            ? recentPaths.map((p) => ({
+                label: path.basename(p),
+                click: () => openFiles([p]),
+              }))
+            : [{ label: '(없음)', enabled: false }],
+        },
         { type: 'separator' },
         { label: '저장', accelerator: 'CmdOrCtrl+S', click: () => send('doc:save') },
         { label: '다른 이름으로 저장…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('doc:save-as') },
@@ -491,6 +500,18 @@ ipcMain.handle('theme:system-dark', () => nativeTheme.shouldUseDarkColors);
 ipcMain.handle('settings:get', () => readSettings());
 ipcMain.handle('settings:set', (_e, patch) => writeSettings(patch));
 ipcMain.handle('app:version', () => app.getVersion());
+
+/* 최근 문서. 목록의 주인은 렌더러이고(설정 파일에 함께 저장된다), 메인은
+   메뉴에 그릴 만큼만 들고 있다가 바뀌면 메뉴를 다시 만든다. */
+let recentPaths = [];
+ipcMain.handle('recent:set', (_e, paths) => {
+  const next = (paths || []).filter(Boolean);
+  const same = next.length === recentPaths.length
+    && next.every((p, i) => p === recentPaths[i]);
+  if (same) return;
+  recentPaths = next;
+  buildMenu();
+});
 
 /* 렌더러가 단축키를 직접 받으므로(Tauri 판에서 메뉴 액셀러레이터가
    웹뷰를 뚫지 못해 그렇게 바꿨다) 창을 만지는 두 가지도 열어 둔다.

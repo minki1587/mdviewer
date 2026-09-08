@@ -35,6 +35,8 @@ struct AppState {
     dirty_count: Mutex<u32>,
     /// 렌더러가 저장을 마쳐 이제 정말 닫아도 될 때
     force_close: Mutex<bool>,
+    /// 파일 메뉴의 '최근 문서' 에 올릴 경로 (렌더러가 설정과 함께 들고 있다)
+    recent: Mutex<Vec<String>>,
 }
 
 /* ------------------------------------------------------------------ *
@@ -401,6 +403,29 @@ fn app_version(app: AppHandle) -> String {
    단축키는 렌더러가 받으므로(아래 build_menu 주석 참고) 렌더러도 부를 수
    있어야 한다. 메뉴 쪽 dispatch_menu 도 이 함수들을 쓴다. */
 
+/// 최근 문서 목록을 받아 파일 메뉴를 다시 만든다.
+/// 목록의 주인은 렌더러다(설정 파일에 함께 저장된다). 메인은 메뉴에 그릴
+/// 만큼만 들고 있는다.
+#[tauri::command]
+fn set_recent(app: AppHandle, paths: Vec<String>) {
+    {
+        let state = app.state::<AppState>();
+        let mut cur = state.recent.lock().unwrap();
+        if *cur == paths {
+            return;                    // 바뀐 게 없으면 메뉴를 건드리지 않는다
+        }
+        *cur = paths;
+    }
+
+    /* 메뉴를 만들고 끼우는 일은 메인 스레드의 것이다. 명령 핸들러는 워커
+       스레드에서 도므로 여기서 바로 부르면 Windows 에서 어긋난다. */
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let list = handle.state::<AppState>().recent.lock().unwrap().clone();
+        let _ = build_menu(&handle, &list);
+    });
+}
+
 #[tauri::command]
 fn toggle_devtools(app: AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
@@ -434,7 +459,12 @@ fn toggle_fullscreen(app: AppHandle) {
  * 혹시 나중에 이 액셀러레이터가 되살아나도 렌더러 쪽에서 중복을 걸러 낸다.
  * ------------------------------------------------------------------ */
 
-fn build_menu(app: &AppHandle) -> tauri::Result<()> {
+/// 메뉴 라벨에서 '&' 는 단축 문자 표시라 그대로 두면 글자가 사라진다.
+fn escape_label(text: &str) -> String {
+    text.replace('&', "&&")
+}
+
+fn build_menu(app: &AppHandle, recent: &[String]) -> tauri::Result<()> {
     let item = |id: &str, label: &str, accel: Option<&str>| {
         let mut b = MenuItemBuilder::with_id(id, label);
         if let Some(a) = accel {
@@ -443,9 +473,31 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         b.build(app)
     };
 
+    /* 최근 문서. 항목 id 에 순번을 담아 두고, 눌리면 그 자리의 경로를 연다.
+       목록이 바뀔 때마다 메뉴 전체를 다시 만들어 끼운다 — 하위 메뉴만
+       골라 고치는 것보다 짧고, 어긋날 구석이 없다. */
+    let mut recent_menu = SubmenuBuilder::new(app, "최근 문서");
+    if recent.is_empty() {
+        recent_menu = recent_menu.item(
+            &MenuItemBuilder::with_id("recent:none", "(없음)")
+                .enabled(false)
+                .build(app)?,
+        );
+    } else {
+        for (i, path) in recent.iter().enumerate() {
+            let name = Path::new(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+            recent_menu = recent_menu.item(&item(&format!("recent:{i}"), &escape_label(&name), None)?);
+        }
+    }
+    let recent_menu = recent_menu.build()?;
+
     let file = SubmenuBuilder::new(app, "파일(&F)")
         .item(&item("doc:new", "새 문서", Some("CmdOrCtrl+N"))?)
         .item(&item("files:pick", "열기…", Some("CmdOrCtrl+O"))?)
+        .item(&recent_menu)
         .separator()
         .item(&item("doc:save", "저장", Some("CmdOrCtrl+S"))?)
         .item(&item("doc:save-as", "다른 이름으로 저장…", Some("CmdOrCtrl+Shift+S"))?)
@@ -521,6 +573,14 @@ fn dispatch_menu(app: &AppHandle, id: &str) {
             tauri::async_runtime::spawn(async move { pick_files(handle).await });
         }
         "update:check" => check_update_inner(app.clone(), true),
+        _ if id.starts_with("recent:") => {
+            let Some(i) = id[7..].parse::<usize>().ok() else { return };
+            let path = app.state::<AppState>().recent.lock().unwrap().get(i).cloned();
+            // 그 사이 파일이 지워졌으면 emit_open 이 오류 상자를 띄운다
+            if let Some(path) = path {
+                emit_open(app, vec![path]);
+            }
+        }
         "view:devtools" => toggle_devtools(app.clone()),
         "view:fullscreen" => toggle_fullscreen(app.clone()),
         "view:mode:toggle" => {
@@ -742,6 +802,7 @@ fn main() {
             get_settings,
             set_settings,
             app_version,
+            set_recent,
             toggle_devtools,
             toggle_fullscreen,
             check_update,
@@ -750,7 +811,10 @@ fn main() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            build_menu(&handle)?;
+            {
+                let list = handle.state::<AppState>().recent.lock().unwrap().clone();
+                build_menu(&handle, &list)?;
+            }
 
             app.on_menu_event(move |app, event| {
                 dispatch_menu(app, event.id().as_ref());

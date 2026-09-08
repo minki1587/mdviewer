@@ -106,9 +106,18 @@ function render(markdown, baseDir) {
     else a.dataset.filePath = abs;
   });
 
-  // 5) 체크박스는 읽기 전용
+  /* 5) 할 일 목록은 읽기 화면에서 눌러 켤 수 있게 열어 둔다 (renderer.js 가
+     원문의 그 줄을 고친다). marked 는 할 일 항목의 체크박스를 <li> 의 첫
+     자식으로 낸다. 본문에 직접 써 넣은 체크박스는 원문의 어느 줄과 짝인지
+     알 수 없으므로 예전처럼 잠가 둔다. */
   root.querySelectorAll('input[type="checkbox"]').forEach((el) => {
-    el.setAttribute('disabled', '');
+    const p = el.parentElement;
+    if (p && p.tagName === 'LI' && p.firstElementChild === el) {
+      el.removeAttribute('disabled');
+      el.classList.add('task');
+    } else {
+      el.setAttribute('disabled', '');
+    }
   });
 
   return { html: root.innerHTML, toc };
@@ -125,6 +134,7 @@ contextBridge.exposeInMainWorld('api', {
   saveFile: (path, text) => ipcRenderer.invoke('file:save', { path, text }),
   saveFileAs: (text, name) => ipcRenderer.invoke('file:save-as', { text, name }),
   setWatchList: (paths) => ipcRenderer.invoke('watch:set', paths),
+  setRecent: (paths) => ipcRenderer.invoke('recent:set', paths),
   confirmClose: (name) => ipcRenderer.invoke('dialog:confirm-close', name),
 
   /* ---- 상태 보고 ---- */

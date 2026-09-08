@@ -135,8 +135,18 @@ function render(markdown, baseDir) {
     else a.dataset.filePath = abs;
   });
 
+  /* 할 일 목록은 읽기 화면에서 눌러 켤 수 있게 열어 둔다 (renderer.js 가
+     원문의 그 줄을 고친다). marked 는 할 일 항목의 체크박스를 <li> 의 첫
+     자식으로 낸다. 본문에 직접 써 넣은 체크박스는 원문의 어느 줄과 짝인지
+     알 수 없으므로 예전처럼 잠가 둔다. */
   root.querySelectorAll('input[type="checkbox"]').forEach((el) => {
-    el.setAttribute('disabled', '');
+    const p = el.parentElement;
+    if (p && p.tagName === 'LI' && p.firstElementChild === el) {
+      el.removeAttribute('disabled');
+      el.classList.add('task');
+    } else {
+      el.setAttribute('disabled', '');
+    }
   });
 
   return { html: root.innerHTML, toc };
@@ -310,6 +320,8 @@ const tauriApi = {
   saveFile: (path, text) => invoke('save_file', { path: path || null, text }),
   saveFileAs: (text, name) => invoke('save_file_as', { text, name: name || null }),
   setWatchList: (paths) => invoke('set_watch_list', { paths: (paths || []).filter(Boolean) }),
+  /** 파일 메뉴의 '최근 문서' 를 다시 만든다. 목록의 주인은 렌더러다. */
+  setRecent: (paths) => invoke('set_recent', { paths: (paths || []).filter(Boolean) }),
 
   /** 0 저장 / 1 저장 안 함 / 2 취소 — Electron 판과 같은 계약 */
   confirmClose: (name) => modal({

@@ -1038,6 +1038,35 @@ body:not(.mode-read) #doc { padding-left: 36px; }
 ::highlight(mv-find) { background: var(--mark-bg); color: var(--ink); }
 ::highlight(mv-find-current) { background: var(--accent); color: var(--paper); }
 
+/* ------------------------------------------------------- 코드 복사 단추
+   본문 안에 심지 않고, 마우스가 올라간 코드 블록 위로 따라다니는 하나뿐인
+   단추다. 본문 DOM 을 건드리면 미리보기 블록 비교가 매번 어긋난다. */
+
+#copy-code {
+  position: fixed;
+  z-index: 60;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-mid);
+  box-shadow: 0 4px 12px -4px rgb(0 0 0 / .3);
+}
+#copy-code[hidden] { display: none; }
+#copy-code:hover { color: var(--ink); border-color: var(--ink-low); }
+#copy-code.done { color: #2e9e5b; border-color: #2e9e5b; }
+
+/* -------------------------------------------------- 할 일 목록 체크박스
+   읽기 화면에서 눌러 켤 수 있다. 누를 수 있다는 것이 보이도록 손 모양으로. */
+.markdown input.task { cursor: pointer; }
+.markdown input.task:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ------------------------------------------- 읽기 화면에서도 상태 표시줄
+   읽는 중에야말로 분량이 궁금하다. 커서 자리 대신 읽기 시간을 보여 준다. */
+body.mode-read { --status-h: 26px; }
+body.mode-read #status { display: flex; }
+
 #update-head {
   display: flex;
   align-items: flex-start;
@@ -1163,7 +1192,8 @@ body:not(.mode-read) #doc { padding-left: 36px; }
 
   /* 앱 껍데기는 종이에 나가지 않는다 */
   #bar, #tabbar, #rail, #status, #gutter, #editor-pane,
-  #empty, #drop, #update, #toast, #help, .mv-modal-back {
+  #empty, #drop, #update, #toast, #help, .mv-modal-back,
+  #find, #copy-code {
     display: none !important;
   }
 

@@ -131,6 +131,22 @@ function setMode(next) {
    저장이 끼어들면 반쪽짜리 목록이 원본을 덮어쓴다. */
 let restoring = false;
 
+/* 파일 메뉴의 '최근 문서'. 목록의 주인은 여기이고, 설정과 함께 저장한다.
+   메인은 메뉴에 그릴 만큼만 받아 둔다. */
+const RECENT_LIMIT = 10;
+let recent = [];
+
+function noteRecent(path) {
+  /* 세션 복원으로 열리는 것은 '방금 연 문서'가 아니다. 이걸 막지 않으면
+     복원할 때마다 목록이 복원 순서로 뒤집히고, 정작 최근에 본 파일이 밀려난다. */
+  if (!path || restoring) return;
+  const next = [path, ...recent.filter((p) => p !== path)].slice(0, RECENT_LIMIT);
+  if (next.length === recent.length && next.every((p, i) => p === recent[i])) return;
+  recent = next;
+  api.setRecent?.(recent);
+  save();
+}
+
 /** 다음 실행 때 되살릴 목록. 아직 저장된 적 없는 새 문서는 경로가 없어 빠진다. */
 function sessionSnapshot() {
   return {
@@ -143,7 +159,7 @@ let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const patch = { theme, scale, pinned, mode, split };
+    const patch = { theme, scale, pinned, mode, split, recent };
     /* 복원 중이면 session 키를 아예 빼서 보낸다. 메인의 set_settings 는
        받은 키만 덮어쓰므로, 저장돼 있던 목록이 그대로 남는다. */
     if (!restoring) patch.session = sessionSnapshot();
@@ -244,6 +260,7 @@ function activate(id) {
 /** 메인에서 파일이 넘어왔을 때 — 이미 열려 있으면 그 탭으로 간다. */
 function openPayload(p) {
   if (!p) return;
+  noteRecent(p.path);
 
   const existing = tabs.find((t) => t.path === p.path);
   if (existing) {
@@ -477,6 +494,7 @@ async function saveTab(t, { as = false } = {}) {
   if (!res || !res.ok) return false;
 
   Object.assign(t, { path: res.path, dir: res.dir, name: res.name, dirty: false, stale: true });
+  noteRecent(res.path);           // 새 문서를 처음 저장했거나 다른 이름으로 저장한 경우
   renderTabs();
   reportState();
   syncWatchList();
@@ -576,11 +594,20 @@ async function exportPdf() {
   setTimeout(restore, 1000);
 }
 
+/* 읽는 데 걸리는 시간. 어절/낱말 200개를 1분으로 잡는다 — 한국어 묵독은
+   분당 500~700음절이고 한 어절이 대략 세 음절이니 얼추 맞고, 영문 낱말
+   기준으로도 흔히 쓰는 200wpm 과 같은 값이라 두 언어에 모두 무난하다. */
+function readingMinutes(words) {
+  return Math.max(1, Math.round(words / 200));
+}
+
 function updateStatus() {
-  if (mode === 'read') return;
   const s = editor.stats();
   statCount.textContent = `${s.words.toLocaleString()}단어 · ${s.chars.toLocaleString()}자`;
-  statPos.textContent = `${editor.cursorLine()}/${s.lines}줄`;
+  // 읽기 화면에는 커서가 없다. 그 자리에 읽는 데 걸릴 시간을 둔다.
+  statPos.textContent = mode === 'read'
+    ? (s.words ? `약 ${readingMinutes(s.words)}분` : '')
+    : `${editor.cursorLine()}/${s.lines}줄`;
 }
 
 /* ============================================================== 스크롤 동기화
@@ -909,6 +936,132 @@ findInput.addEventListener('keydown', (e) => {
 $('#find-next').addEventListener('click', () => findGo(1));
 $('#find-prev').addEventListener('click', () => findGo(-1));
 $('#find-close').addEventListener('click', findClose);
+
+/* =========================================================== 코드 복사
+ *
+ * 코드 블록마다 단추를 심지 않고, 마우스가 올라간 블록 위로 따라다니는
+ * 단추 하나를 쓴다. 본문 DOM 에 무언가를 넣으면 미리보기의 블록 비교가
+ * 그려낸 HTML 과 어긋나 타이핑할 때마다 멀쩡한 블록이 다시 그려진다.
+ * ------------------------------------------------------------------ */
+
+const copyBtn = $('#copy-code');
+let copyTarget = null;
+let copyDoneTimer = null;
+
+function hideCopyBtn() {
+  copyTarget = null;
+  copyBtn.hidden = true;
+}
+
+function placeCopyBtn(pre) {
+  const r = pre.getBoundingClientRect();
+  const box = scroller.getBoundingClientRect();
+  // 블록이 화면 위아래로 거의 빠져나갔으면 단추도 치운다
+  if (r.bottom < box.top + 30 || r.top > box.bottom - 10) { hideCopyBtn(); return; }
+  copyTarget = pre;
+  copyBtn.hidden = false;
+  copyBtn.style.top = `${Math.max(r.top + 6, box.top + 6)}px`;
+  copyBtn.style.left = `${r.right - 34}px`;
+}
+
+scroller.addEventListener('mouseover', (e) => {
+  if (e.target.closest('#copy-code')) return;       // 단추 위로 옮겨 가는 중
+  const pre = e.target.closest('pre');
+  if (pre && docEl.contains(pre)) placeCopyBtn(pre);
+  else hideCopyBtn();
+});
+scroller.addEventListener('mouseleave', hideCopyBtn);
+scroller.addEventListener('scroll', () => {
+  if (copyTarget) placeCopyBtn(copyTarget);
+}, { passive: true });
+
+copyBtn.addEventListener('click', async () => {
+  if (!copyTarget) return;
+  const code = copyTarget.querySelector('code') || copyTarget;
+  const text = code.textContent;
+
+  let ok = true;
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    /* 클립보드 권한이 막힌 경우를 대비한 옛 방식. 화면 밖에 잠깐 두었다 지운다. */
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch { ok = false; }
+  }
+
+  if (!ok) { toast('복사하지 못했습니다'); return; }
+  copyBtn.classList.add('done');
+  clearTimeout(copyDoneTimer);
+  copyDoneTimer = setTimeout(() => copyBtn.classList.remove('done'), 1200);
+});
+
+/* ======================================================= 할 일 체크박스
+ *
+ * 읽기 화면에서 체크박스를 누르면 원문의 그 줄을 고친다. 미리보기의 n번째
+ * 할 일 체크박스는 원문의 n번째 할 일 줄과 짝이다 — marked 는 할 일 항목
+ * 에만 <li> 첫 자식으로 체크박스를 내고(api 계층이 거기에만 .task 를 붙인다),
+ * 그리는 순서는 원문 순서와 같다.
+ * ------------------------------------------------------------------ */
+
+/* 인용문 안(`> - [ ]`)도 체크박스로 그려지므로 '>' 를 넘겨 가며 읽는다. */
+const TASK_LINE = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+\[)([ xX])(?=\])/;
+
+/* 코드 울타리. 안쪽의 `- [ ]` 는 글자 그대로 나오지 세어야 할 항목이 아니다.
+   이걸 빼먹으면 세는 수가 어긋나 엉뚱한 줄이 바뀐다 — 마크다운 문법을
+   설명하는 문서에서 실제로 일어난다. */
+const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
+
+/** 원문에서 n번째 할 일 항목의 상태 글자가 몇 번째 글자인지. 없으면 -1. */
+function taskCharAt(text, nth) {
+  const lines = text.split('\n');
+  let seen = -1;
+  let offset = 0;          // 문서 처음부터 이 줄 앞까지의 글자 수
+  let fence = null;        // 열려 있는 울타리의 표시 문자열
+
+  for (const line of lines) {
+    const f = line.match(FENCE);
+    if (f) {
+      if (!fence) fence = f[1];
+      // 닫는 울타리는 같은 문자로 열 때만큼 길거나 더 길어야 한다
+      else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
+    } else if (!fence) {
+      const m = line.match(TASK_LINE);
+      if (m && ++seen === nth) {
+        return { at: offset + m[1].length, on: m[2].toLowerCase() === 'x' };
+      }
+    }
+    offset += line.length + 1;          // +1 은 줄바꿈
+  }
+  return null;
+}
+
+function toggleTask(box) {
+  const t = active();
+  if (!t) return;
+
+  const nth = [...docEl.querySelectorAll('input.task')].indexOf(box);
+  if (nth < 0) return;
+
+  const hit = taskCharAt(t.text, nth);
+  if (!hit) return;
+  editor.replaceRange(hit.at, hit.at + 1, hit.on ? ' ' : 'x');
+}
+
+docEl.addEventListener('click', (e) => {
+  const box = e.target.closest('input.task');
+  if (!box) return;
+  /* 기본 동작을 막지 않는다. 눌린 표시는 바로 나타나고, 잠시 뒤 원문을
+     고쳐 다시 그린 결과도 같은 상태라 깜빡이지 않는다. 막아 두면 미리보기
+     갱신이 늦어지는 만큼 눌러도 반응이 없는 것처럼 보인다. */
+  toggleTask(box);
+});
 
 /* ================================================================== 알림 */
 
@@ -1585,6 +1738,9 @@ async function restoreSession(session) {
   applyScale(typeof saved.scale === 'number' ? saved.scale : 1);
   applyPin(Boolean(saved.pinned));
   applySplit(typeof saved.split === 'number' ? saved.split : 50);
+
+  recent = Array.isArray(saved.recent) ? saved.recent.slice(0, RECENT_LIMIT) : [];
+  api.setRecent?.(recent);
 
   const first = makeTab();
   tabs.push(first);
