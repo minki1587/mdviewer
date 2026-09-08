@@ -707,6 +707,17 @@ fn main() {
                 emit_open(app, files);
             }
         }));
+
+        /* 창 크기·위치·최대화 상태를 기억한다.
+           VISIBLE 은 일부러 뺐다 — 창은 visible:false 로 만들어 두고 렌더러가
+           준비되면 우리가 띄운다(show_main_window). 이 플래그를 켜면 플러그인이
+           먼저 창을 띄워, 내용이 그려지기 전 빈 창이 번쩍이던 시절로 돌아간다. */
+        use tauri_plugin_window_state::StateFlags;
+        builder = builder.plugin(
+            tauri_plugin_window_state::Builder::new()
+                .with_state_flags(StateFlags::POSITION | StateFlags::SIZE | StateFlags::MAXIMIZED)
+                .build(),
+        );
     }
 
     builder

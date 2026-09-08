@@ -127,10 +127,28 @@ function setMode(next) {
   save();
 }
 
+/* 복원하는 동안에는 세션을 저장하지 않는다. 탭을 하나씩 되살리는 중간에
+   저장이 끼어들면 반쪽짜리 목록이 원본을 덮어쓴다. */
+let restoring = false;
+
+/** 다음 실행 때 되살릴 목록. 아직 저장된 적 없는 새 문서는 경로가 없어 빠진다. */
+function sessionSnapshot() {
+  return {
+    paths: tabs.map((t) => t.path).filter(Boolean),
+    active: active()?.path || null,
+  };
+}
+
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => api.setSettings({ theme, scale, pinned, mode, split }), 250);
+  saveTimer = setTimeout(() => {
+    const patch = { theme, scale, pinned, mode, split };
+    /* 복원 중이면 session 키를 아예 빼서 보낸다. 메인의 set_settings 는
+       받은 키만 덮어쓰므로, 저장돼 있던 목록이 그대로 남는다. */
+    if (!restoring) patch.session = sessionSnapshot();
+    api.setSettings(patch);
+  }, 250);
 }
 
 /* ============================================================== 탭 관리 */
@@ -167,6 +185,10 @@ function renderTabs() {
   const current = tabsEl.querySelector('.tab.active');
   if (current) current.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   document.body.classList.toggle('many-tabs', tabs.length > 1);
+
+  /* 탭이 열리고·닫히고·순서가 바뀌고·다른 탭으로 옮겨 가는 네 경우가 모두
+     여기를 지난다. 세션 저장을 한 곳에 걸기에 알맞다 (save 는 묶어서 늦춘다). */
+  save();
 }
 
 function activate(id) {
@@ -196,6 +218,7 @@ function activate(id) {
     lastTocKey = t.tocKey;
     buildRail(t.toc);
     rebuildAnchors(t.toc);
+    refreshFind();     // 탭을 옮기면 들고 있던 Range 가 끊어진 노드를 가리킨다
   }
 
   renderTabs();
@@ -392,6 +415,7 @@ function renderPreview() {
   t.stale = false;
 
   lastRenderMs = performance.now() - started;
+  refreshFind();
   requestAnimationFrame(() => {
     if (mode === 'split') syncEditorToPreview({ force: true });
     updateRail();
@@ -730,6 +754,162 @@ scroller.addEventListener('scroll', () => {
 }, { passive: true });
 window.addEventListener('resize', updateRail);
 
+/* ================================================================== 찾기
+ *
+ * 읽기 화면에서 Ctrl+F. 편집기에는 CodeMirror 의 찾기가 따로 있으므로
+ * 여기가 다루는 것은 '이미 그려진 본문'뿐이다.
+ *
+ * 본문 HTML 은 한 글자도 건드리지 않는다. <mark> 를 끼워 넣으면 미리보기의
+ * 블록 비교(patchBlocks)가 매번 어긋나 타이핑 중 화면이 깜빡이고, 다시
+ * 그릴 때마다 표시가 날아간다. 대신 CSS Custom Highlight 로 Range 에만
+ * 색을 입힌다 — DOM 은 그대로 두고 그리기만 얹는 방식이다.
+ * ------------------------------------------------------------------ */
+
+const findEl    = $('#find');
+const findInput = $('#find-input');
+const findCount = $('#find-count');
+
+/* WebView2 와 Electron 모두 되는 기능이지만, 없으면 예전처럼 편집기 찾기로
+   넘긴다. 기능이 빠진 채 조용히 아무 일도 안 하는 것이 제일 나쁘다. */
+const HAS_HIGHLIGHT =
+  typeof CSS !== 'undefined' && !!CSS.highlights && typeof Highlight === 'function';
+
+/** 한 글자짜리 검색어가 큰 문서에서 수만 개를 만들지 않도록 막는다. */
+const FIND_LIMIT = 2000;
+
+let findRanges = [];
+let findIndex = 0;
+
+/** 본문의 모든 텍스트를 한 줄로 잇고, 각 노드가 어디서 시작하는지 적어 둔다. */
+function findHaystack() {
+  const walker = document.createTreeWalker(docEl, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  let text = '';
+  let n;
+  while ((n = walker.nextNode())) {
+    nodes.push({ node: n, start: text.length });
+    text += n.nodeValue;
+  }
+  return { nodes, text };
+}
+
+/** 이어붙인 문자열의 [from, to) 를 실제 DOM Range 로 되돌린다.
+    한 낱말이 <b> 등으로 쪼개져 여러 노드에 걸쳐 있어도 맞는다. */
+function findRange(nodes, from, to) {
+  const locate = (pos) => {
+    let lo = 0;
+    let hi = nodes.length - 1;
+    let at = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (nodes[mid].start <= pos) { at = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return [nodes[at].node, pos - nodes[at].start];
+  };
+
+  const [sn, so] = locate(from);
+  const [en, eo] = locate(to);
+  const r = document.createRange();
+  r.setStart(sn, Math.min(so, sn.nodeValue.length));
+  r.setEnd(en, Math.min(eo, en.nodeValue.length));
+  return r;
+}
+
+function paintFindMarks() {
+  if (!HAS_HIGHLIGHT) return;
+  CSS.highlights.delete('mv-find');
+  CSS.highlights.delete('mv-find-current');
+  if (!findRanges.length) return;
+
+  const rest = findRanges.filter((_, i) => i !== findIndex);
+  if (rest.length) CSS.highlights.set('mv-find', new Highlight(...rest));
+  CSS.highlights.set('mv-find-current', new Highlight(findRanges[findIndex]));
+}
+
+function paintFindCount() {
+  const asked = findInput.value.trim().length > 0;
+  const n = findRanges.length;
+  findCount.textContent = n ? `${findIndex + 1}/${n}` : (asked ? '없음' : '');
+  findCount.classList.toggle('none', asked && !n);
+}
+
+function scrollToMatch() {
+  const r = findRanges[findIndex];
+  if (!r) return;
+  const rect = r.getBoundingClientRect();
+  const box = scroller.getBoundingClientRect();
+  // 화면 밖이거나 가장자리에 걸쳐 있을 때만 움직인다 — 읽던 자리를 흔들지 않는다
+  if (rect.top < box.top + 56 || rect.bottom > box.bottom - 36) {
+    scroller.scrollTop += rect.top - box.top - box.height / 3;
+  }
+}
+
+function findRun({ keepIndex = false } = {}) {
+  const q = findInput.value;
+  const prev = findIndex;
+  findRanges = [];
+  findIndex = 0;
+
+  if (q.trim()) {
+    const { nodes, text } = findHaystack();
+    if (nodes.length) {
+      const hay = text.toLowerCase();
+      const needle = q.toLowerCase();
+      let at = hay.indexOf(needle);
+      while (at !== -1 && findRanges.length < FIND_LIMIT) {
+        findRanges.push(findRange(nodes, at, at + needle.length));
+        at = hay.indexOf(needle, at + needle.length);
+      }
+    }
+  }
+
+  if (keepIndex && findRanges.length) findIndex = Math.min(prev, findRanges.length - 1);
+  paintFindMarks();
+  paintFindCount();
+  return findRanges.length;
+}
+
+function findGo(delta) {
+  if (!findRanges.length) return;
+  findIndex = (findIndex + delta + findRanges.length) % findRanges.length;
+  paintFindMarks();
+  paintFindCount();
+  scrollToMatch();
+}
+
+function findOpen() {
+  findEl.hidden = false;
+  findInput.focus();
+  findInput.select();
+  if (findInput.value.trim() && findRun()) scrollToMatch();
+}
+
+function findClose() {
+  findEl.hidden = true;
+  findRanges = [];
+  findIndex = 0;
+  if (HAS_HIGHLIGHT) {
+    CSS.highlights.delete('mv-find');
+    CSS.highlights.delete('mv-find-current');
+  }
+  if (mode === 'read') scroller.focus({ preventScroll: true });
+}
+
+/** 본문이 다시 그려지면 들고 있던 Range 는 끊어진 노드를 가리킨다. 다시 찾는다. */
+function refreshFind() {
+  if (findEl.hidden) return;
+  findRun({ keepIndex: true });
+}
+
+findInput.addEventListener('input', () => { if (findRun()) scrollToMatch(); });
+findInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); findGo(e.shiftKey ? -1 : 1); }
+  else if (e.key === 'Escape') { e.preventDefault(); findClose(); }
+});
+$('#find-next').addEventListener('click', () => findGo(1));
+$('#find-prev').addEventListener('click', () => findGo(-1));
+$('#find-close').addEventListener('click', findClose);
+
 /* ================================================================== 알림 */
 
 let toastTimer = null;
@@ -891,7 +1071,9 @@ $('#help-close').addEventListener('click', closeHelp);
 $('#btn-help').addEventListener('click', () => openHelp('syntax'));
 helpEl.addEventListener('mousedown', (e) => { if (e.target === helpEl) closeHelp(); });
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !helpEl.hidden) { e.preventDefault(); closeHelp(); }
+  if (e.key === 'Escape' && !helpEl.hidden) { e.preventDefault(); closeHelp(); return; }
+  // 찾기 상자 밖에 초점이 있어도 Esc 로 닫히게 한다
+  if (e.key === 'Escape' && !findEl.hidden) { e.preventDefault(); findClose(); }
 }, true);
 
 /* ================================================================ 업데이트
@@ -1258,7 +1440,12 @@ async function runCommand(name, source = 'menu') {
     /* 편집 */
     case 'edit:undo':   editor.undo(); break;
     case 'edit:redo':   editor.redo(); break;
-    case 'edit:find':   if (mode === 'read') setMode('split'); editor.find(); break;
+    /* 읽는 중에는 그려진 본문에서 찾는다. 예전에는 여기서 나란히 보기로
+       바꿔 버려, 읽기만 하려던 사람 앞에 편집기가 튀어나왔다. */
+    case 'edit:find':
+      if (mode === 'read' && HAS_HIGHLIGHT) findOpen();
+      else { if (mode === 'read') setMode('split'); editor.find(); }
+      break;
     case 'edit:bold':   editor.bold(); break;
     case 'edit:italic': editor.italic(); break;
     case 'edit:link':   editor.link(); break;
@@ -1345,6 +1532,11 @@ window.addEventListener('keydown', (e) => {
   const name = SHORTCUTS[comboOf(e)];
   if (!name) return;
 
+  /* 찾기 상자나 도움말 검색창에 글을 쓰는 중이라면 되돌리기·다시 실행은
+     그 입력칸의 것이어야 한다. 저장·탭 이동 같은 나머지는 그대로 통한다. */
+  const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+  if (typing && (name === 'edit:undo' || name === 'edit:redo')) return;
+
   /* WebView2 의 기본 동작을 반드시 막아야 하는 것들이 섞여 있다.
      Ctrl+R 은 페이지를 새로 고쳐 열려 있는 탭을 통째로 날리고,
      Ctrl+P / Ctrl+F 는 웹뷰 자체의 인쇄·찾기를 연다. */
@@ -1353,6 +1545,36 @@ window.addEventListener('keydown', (e) => {
 });
 
 /* ================================================================== 시작 */
+
+/** 지난 번에 열려 있던 문서를 되살린다. */
+const SESSION_LIMIT = 30;
+
+async function restoreSession(session) {
+  const paths = Array.isArray(session?.paths) ? session.paths.slice(0, SESSION_LIMIT) : [];
+  if (!paths.length) return;
+
+  restoring = true;
+  let missing = 0;
+  try {
+    // 한 줄씩 기다리면 파일이 많을 때 창 뜨는 것이 늦어진다. 읽기는 한꺼번에,
+    // 탭으로 만드는 것은 저장된 순서대로 한다.
+    const docs = await Promise.all(
+      paths.map((p) => Promise.resolve(api.readFile(p)).catch(() => null)),
+    );
+    for (const doc of docs) {
+      if (doc) openPayload(doc);
+      else missing++;
+    }
+    const target = tabs.find((t) => t.path === session.active);
+    if (target) activate(target.id);
+  } finally {
+    restoring = false;
+  }
+
+  save();
+  // 지워졌거나 옮겨진 파일을 말없이 빠뜨리면 사용자는 탭이 준 줄도 모른다
+  if (missing) toast(`이전에 열려 있던 문서 ${missing}개를 찾지 못했습니다`);
+}
 
 (async () => {
   let saved = {};
@@ -1369,6 +1591,12 @@ window.addEventListener('keydown', (e) => {
   activate(first.id);
 
   setMode(['read', 'edit', 'split'].includes(saved.mode) ? saved.mode : 'split');
+
+  /* ready() 보다 먼저 되살린다. ready() 를 받은 메인이 명령줄로 넘어온 파일을
+     보내오는데, 그 파일이 마지막에 열려야 활성 탭이 된다 — .md 를 더블클릭해
+     실행했으면 그 문서를 보고 싶지, 어제 보던 탭을 보고 싶지는 않다. */
+  await restoreSession(saved.session);
+
   api.ready();
 })();
 

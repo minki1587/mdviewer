@@ -148,7 +148,7 @@ window.HELP_KEYS = [
     group: '편집',
     rows: [
       ['Ctrl+Z / Ctrl+Shift+Z', '되돌리기 / 다시 실행'],
-      ['Ctrl+F', '찾기·바꾸기'],
+      ['Ctrl+F', '찾기·바꾸기 (읽기 화면에서는 본문에서 바로 찾기)'],
       ['Ctrl+B / Ctrl+I', '굵게 / 기울임'],
       ['Ctrl+`', '인라인 코드'],
       ['Ctrl+Shift+X', '취소선'],

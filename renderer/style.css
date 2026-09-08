@@ -990,6 +990,54 @@ body:not(.mode-read) #doc { padding-left: 36px; }
 }
 #update[hidden] { display: none; }
 
+/* ---------------------------------------------------------------- 찾기
+   읽기 화면에서 그려진 본문을 찾는 막대. 나란히 보기에서도 오른쪽
+   미리보기 위에 뜨도록 창 오른쪽에 붙인다. */
+
+#find {
+  position: fixed;
+  top: calc(var(--bar-h) + var(--tab-h) + 10px);
+  right: 18px;
+  z-index: 74;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  box-shadow: 0 12px 30px -12px rgb(0 0 0 / .38);
+}
+#find[hidden] { display: none; }
+
+#find-input {
+  width: 190px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+#find-input::-webkit-search-cancel-button { display: none; }
+
+#find-count {
+  min-width: 52px;
+  color: var(--ink-low);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+#find-count.none { color: #d0463b; }
+
+#find .ghost { width: 24px; height: 24px; }
+#find .ghost svg { width: 15px; height: 15px; }
+
+/* 본문 하이라이트는 DOM 을 건드리지 않는 CSS Custom Highlight 로 그린다.
+   <mark> 를 끼워 넣으면 미리보기 블록 비교(patchBlocks)가 매번 어긋난다. */
+::highlight(mv-find) { background: var(--mark-bg); color: var(--ink); }
+::highlight(mv-find-current) { background: var(--accent); color: var(--paper); }
+
 #update-head {
   display: flex;
   align-items: flex-start;
