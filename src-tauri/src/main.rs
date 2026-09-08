@@ -397,11 +397,41 @@ fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/* 개발자 도구와 전체 화면은 창을 직접 만져야 해서 메뉴 안에서 처리해 왔다.
+   단축키는 렌더러가 받으므로(아래 build_menu 주석 참고) 렌더러도 부를 수
+   있어야 한다. 메뉴 쪽 dispatch_menu 도 이 함수들을 쓴다. */
+
+#[tauri::command]
+fn toggle_devtools(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        if win.is_devtools_open() {
+            win.close_devtools();
+        } else {
+            win.open_devtools();
+        }
+    }
+}
+
+#[tauri::command]
+fn toggle_fullscreen(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let now = win.is_fullscreen().unwrap_or(false);
+        let _ = win.set_fullscreen(!now);
+    }
+}
+
 /* ------------------------------------------------------------------ *
  * 메뉴
  *
  * 메뉴 항목 id 를 그대로 렌더러 이벤트 이름으로 쓴다. Electron 판에서
  * send('doc:new') 하던 것과 같은 문자열이라 렌더러가 그대로 알아듣는다.
+ *
+ * 여기 붙인 accelerator 는 **메뉴에 단축키를 적어 보여 주는 용도뿐**이다.
+ * 실제로 키를 받아 처리하는 것은 렌더러(renderer.js 의 SHORTCUTS)다.
+ * WebView2 가 창 안의 키 입력을 먼저 가져가 네이티브 메뉴의 액셀러레이터
+ * 테이블까지 내려보내지 않기 때문이다 — 메뉴를 마우스로 누르면 동작하는데
+ * 같은 항목의 단축키만 죽어 있던 것이 그 증상이었다. 렌더러가 단일 창구이고,
+ * 혹시 나중에 이 액셀러레이터가 되살아나도 렌더러 쪽에서 중복을 걸러 낸다.
  * ------------------------------------------------------------------ */
 
 fn build_menu(app: &AppHandle) -> tauri::Result<()> {
@@ -462,7 +492,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<()> {
         .item(&item("view:toggle-toc", "목차 열고 닫기", Some("CmdOrCtrl+\\"))?)
         .item(&item("view:toggle-theme", "어두운 화면 전환", Some("CmdOrCtrl+D"))?)
         .separator()
-        .item(&PredefinedMenuItem::fullscreen(app, Some("전체 화면"))?)
+        .item(&item("view:fullscreen", "전체 화면", Some("F11"))?)
         .item(&item("view:devtools", "개발자 도구", Some("F12"))?)
         .build()?;
 
@@ -491,15 +521,8 @@ fn dispatch_menu(app: &AppHandle, id: &str) {
             tauri::async_runtime::spawn(async move { pick_files(handle).await });
         }
         "update:check" => check_update_inner(app.clone(), true),
-        "view:devtools" => {
-            if let Some(win) = app.get_webview_window("main") {
-                if win.is_devtools_open() {
-                    win.close_devtools();
-                } else {
-                    win.open_devtools();
-                }
-            }
-        }
+        "view:devtools" => toggle_devtools(app.clone()),
+        "view:fullscreen" => toggle_fullscreen(app.clone()),
         "view:mode:toggle" => {
             let _ = app.emit("view:mode", "toggle");
         }
@@ -708,6 +731,8 @@ fn main() {
             get_settings,
             set_settings,
             app_version,
+            toggle_devtools,
+            toggle_fullscreen,
             check_update,
             download_update,
             install_update,

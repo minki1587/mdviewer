@@ -491,6 +491,19 @@ ipcMain.handle('theme:system-dark', () => nativeTheme.shouldUseDarkColors);
 ipcMain.handle('settings:get', () => readSettings());
 ipcMain.handle('settings:set', (_e, patch) => writeSettings(patch));
 ipcMain.handle('app:version', () => app.getVersion());
+
+/* 렌더러가 단축키를 직접 받으므로(Tauri 판에서 메뉴 액셀러레이터가
+   웹뷰를 뚫지 못해 그렇게 바꿨다) 창을 만지는 두 가지도 열어 둔다.
+   Electron 에서는 메뉴 role 이 이미 같은 일을 하지만, 두 판의 window.api
+   모양을 같게 유지해야 renderer.js 를 공유할 수 있다. */
+ipcMain.handle('win:toggle-devtools', () => {
+  if (!win) return;
+  if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+  else win.webContents.openDevTools();
+});
+ipcMain.handle('win:toggle-fullscreen', () => {
+  if (win) win.setFullScreen(!win.isFullScreen());
+});
 ipcMain.handle('update:state', () => updateState);
 ipcMain.handle('update:check', () => checkForUpdates({ manual: true }));
 ipcMain.handle('update:download', () => {

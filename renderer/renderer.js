@@ -1205,16 +1205,39 @@ api.onFileChanged((payload) => {
   replaceContent(t, payload.text);
 });
 
-api.onZoom((delta) => applyScale(delta === 0 ? 1 : scale + delta * 0.1));
-api.onToggleToc(() => applyPin(!pinned));
-api.onToggleTheme(() => applyTheme(theme === 'dark' ? 'light' : 'dark'));
-api.onMode((next) => setMode(next === 'split' && mode === 'split' ? 'read' : next));
 api.onSaveAllQuit(async () => { if (await saveAll()) api.forceQuit(); });
 
-api.onCommand(async (name) => {
+/* ================================================================== 명령
+ *
+ * 메뉴 클릭과 단축키가 모두 이 함수 하나로 들어온다.
+ *
+ * 단축키를 여기서 받는 이유: Rust 메뉴에 붙인 액셀러레이터는 WebView2 가
+ * 창 안의 키 입력을 먼저 가져가는 탓에 발화하지 않는다. 메뉴를 마우스로
+ * 누르면 되는데 같은 항목의 단축키만 죽어 있던 것이 그 증상이었다.
+ * 메뉴의 단축키 표시는 그대로 두고(보여 줄 것은 있어야 한다), 실제 처리는
+ * 키가 실제로 도착하는 웹뷰 안에서 한다.
+ * ------------------------------------------------------------------ */
+
+/* 같은 명령이 두 경로로 겹쳐 들어오는 것을 막는다. 지금은 액셀러레이터가
+   죽어 있어 겹칠 일이 없지만, 나중에 되살아나면 키 한 번에 두 번 실행된다.
+   출처가 서로 다른 같은 명령만 걸러 낸다 — 사용자가 같은 키를 연달아
+   누르는 것(Ctrl+N 두 번)은 막지 않는다. */
+const lastCommand = new Map();
+
+function isEcho(name, source) {
+  const prev = lastCommand.get(name);
+  const now = performance.now();
+  lastCommand.set(name, { source, at: now });
+  return !!prev && prev.source !== source && now - prev.at < 250;
+}
+
+async function runCommand(name, source = 'menu') {
+  if (isEcho(name, source)) return;
   const t = active();
   switch (name) {
+    /* 파일 */
     case 'doc:new':      newTab(); break;
+    case 'files:pick':   api.pickFiles(); break;
     case 'doc:save':     saveActive(); break;
     case 'doc:save-as':  saveActive({ as: true }); break;
     case 'doc:save-all': saveAll(); break;
@@ -1227,19 +1250,106 @@ api.onCommand(async (name) => {
       if (fresh) replaceContent(t, fresh.text);
       break;
     }
+    /* 탭 */
     case 'tab:close':        closeTab(activeId); break;
     case 'tab:close-others': closeOthers(); break;
     case 'tab:next':         step(+1); break;
     case 'tab:prev':         step(-1); break;
+    /* 편집 */
     case 'edit:undo':   editor.undo(); break;
     case 'edit:redo':   editor.redo(); break;
     case 'edit:find':   if (mode === 'read') setMode('split'); editor.find(); break;
     case 'edit:bold':   editor.bold(); break;
     case 'edit:italic': editor.italic(); break;
     case 'edit:link':   editor.link(); break;
+    /* 보기 — 예전에는 onZoom/onMode 처럼 따로 오던 신호였다.
+       단축키와 메뉴가 같은 이름을 쓰도록 여기로 모았다. */
+    case 'view:mode:toggle':  setMode('toggle'); break;
+    case 'view:mode:split':   setMode(mode === 'split' ? 'read' : 'split'); break;
+    case 'view:zoom:in':      applyScale(scale + 0.1); break;
+    case 'view:zoom:out':     applyScale(scale - 0.1); break;
+    case 'view:zoom:reset':   applyScale(1); break;
+    case 'view:toggle-toc':   applyPin(!pinned); break;
+    case 'view:toggle-theme': applyTheme(theme === 'dark' ? 'light' : 'dark'); break;
+    case 'view:fullscreen':   api.toggleFullscreen(); break;
+    case 'view:devtools':     api.toggleDevtools(); break;
+    /* 도움말 */
     case 'help:syntax': openHelp('syntax'); break;
     case 'help:keys':   openHelp('keys'); break;
   }
+}
+
+api.onCommand((name) => runCommand(name, 'menu'));
+api.onZoom((delta) => runCommand(
+  delta === 0 ? 'view:zoom:reset' : delta > 0 ? 'view:zoom:in' : 'view:zoom:out', 'menu'));
+api.onToggleToc(() => runCommand('view:toggle-toc', 'menu'));
+api.onToggleTheme(() => runCommand('view:toggle-theme', 'menu'));
+api.onMode((next) => runCommand(
+  next === 'split' ? 'view:mode:split' : 'view:mode:toggle', 'menu'));
+
+/* ------------------------------------------------------------ 단축키 표
+ *
+ * 메뉴에 적힌 조합과 같아야 한다. 편집기가 이미 쓰는 키(Ctrl+B/I/K/S 등)도
+ * 표에 있지만, CodeMirror 가 먼저 처리하면서 preventDefault 를 걸기 때문에
+ * 편집 중에는 편집기가 이기고 읽기 모드에서만 이 표가 맡는다.
+ */
+const SHORTCUTS = {
+  'Ctrl+N': 'doc:new',
+  'Ctrl+O': 'files:pick',
+  'Ctrl+S': 'doc:save',
+  'Ctrl+Shift+S': 'doc:save-as',
+  'Ctrl+Alt+S': 'doc:save-all',
+  'Ctrl+P': 'doc:export-pdf',
+  'Ctrl+R': 'doc:reload',
+  'Ctrl+W': 'tab:close',
+  'Ctrl+Tab': 'tab:next',
+  'Ctrl+Shift+Tab': 'tab:prev',
+  'Ctrl+E': 'view:mode:toggle',
+  'Ctrl+Shift+E': 'view:mode:split',
+  'Ctrl+\\': 'view:toggle-toc',
+  'Ctrl+D': 'view:toggle-theme',
+  'Ctrl+=': 'view:zoom:in',
+  'Ctrl+Shift+=': 'view:zoom:in',
+  'Ctrl+-': 'view:zoom:out',
+  'Ctrl+0': 'view:zoom:reset',
+  'Ctrl+F': 'edit:find',
+  'Ctrl+Z': 'edit:undo',
+  'Ctrl+Shift+Z': 'edit:redo',
+  'Ctrl+B': 'edit:bold',
+  'Ctrl+I': 'edit:italic',
+  'Ctrl+K': 'edit:link',
+  'F1': 'help:syntax',
+  'F11': 'view:fullscreen',
+  'F12': 'view:devtools',
+};
+
+/** 이벤트를 'Ctrl+Shift+S' 같은 한 줄로 만든다. */
+function comboOf(e) {
+  const parts = [];
+  if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
+  if (e.altKey) parts.push('Alt');
+  if (e.shiftKey) parts.push('Shift');
+  let key = e.key;
+  if (key === '+') key = '=';               // Shift 를 낀 '=' 는 '+' 로 온다
+  if (key.length === 1) key = key.toUpperCase();
+  parts.push(key);
+  return parts.join('+');
+}
+
+window.addEventListener('keydown', (e) => {
+  // 편집기나 모달이 이미 처리한 키는 건드리지 않는다
+  if (e.defaultPrevented) return;
+  // 저장 여부를 묻는 모달이 떠 있는 동안은 뒤쪽 화면을 조작하지 않는다
+  if (document.querySelector('.mv-modal-back')) return;
+
+  const name = SHORTCUTS[comboOf(e)];
+  if (!name) return;
+
+  /* WebView2 의 기본 동작을 반드시 막아야 하는 것들이 섞여 있다.
+     Ctrl+R 은 페이지를 새로 고쳐 열려 있는 탭을 통째로 날리고,
+     Ctrl+P / Ctrl+F 는 웹뷰 자체의 인쇄·찾기를 연다. */
+  e.preventDefault();
+  runCommand(name, 'key');
 });
 
 /* ================================================================== 시작 */

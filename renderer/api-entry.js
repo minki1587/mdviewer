@@ -327,6 +327,12 @@ const tauriApi = {
   }),
   forceQuit: () => invoke('force_quit'),
 
+  /* ---- 창 ----
+     단축키는 렌더러가 받으므로(메뉴 액셀러레이터는 WebView2 를 뚫지 못한다)
+     창을 만지는 두 가지도 렌더러가 부를 수 있어야 한다. */
+  toggleDevtools: () => invoke('toggle_devtools'),
+  toggleFullscreen: () => invoke('toggle_fullscreen'),
+
   /* ---- 바깥으로 ---- */
   openExternal: (url) => invoke('open_external', { url }),
   openLocal: (p) => invoke('open_local', { path: p }),

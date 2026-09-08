@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld('api', {
   forceQuit: () => ipcRenderer.invoke('app:force-quit'),
 
   /* ---- 바깥으로 ---- */
+  toggleDevtools: () => ipcRenderer.invoke('win:toggle-devtools'),
+  toggleFullscreen: () => ipcRenderer.invoke('win:toggle-fullscreen'),
+
   openExternal: (url) => ipcRenderer.invoke('shell:external', url),
   openLocal: (p) => ipcRenderer.invoke('shell:open-path', p),
   reveal: (p) => ipcRenderer.invoke('shell:reveal', p),
