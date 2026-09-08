@@ -972,11 +972,15 @@ scroller.addEventListener('mouseover', (e) => {
 });
 scroller.addEventListener('mouseleave', hideCopyBtn);
 scroller.addEventListener('scroll', () => {
-  if (copyTarget) placeCopyBtn(copyTarget);
+  /* 미리보기가 다시 그려지면 들고 있던 <pre> 는 본문에서 떨어져 나간다.
+     떨어진 것을 재면 0 이 나와 단추가 엉뚱한 자리로 간다. */
+  if (copyTarget && docEl.contains(copyTarget)) placeCopyBtn(copyTarget);
+  else if (copyTarget) hideCopyBtn();
 }, { passive: true });
 
 copyBtn.addEventListener('click', async () => {
-  if (!copyTarget) return;
+  // 떨어져 나간 블록에는 옛 내용이 남아 있다. 그걸 복사해 주면 안 된다.
+  if (!copyTarget || !docEl.contains(copyTarget)) { hideCopyBtn(); return; }
   const code = copyTarget.querySelector('code') || copyTarget;
   const text = code.textContent;
 
@@ -1663,15 +1667,28 @@ const SHORTCUTS = {
   'F12': 'view:devtools',
 };
 
-/** 이벤트를 'Ctrl+Shift+S' 같은 한 줄로 만든다. */
+/** 눌린 조합을 'Ctrl+Shift+S' 같은 한 줄로 만든다. */
 function comboOf(e) {
+  let key = e.key;
+  if (key === '+') key = '=';               // Shift 를 낀 '=' 는 '+' 로 온다
+  if (key.length === 1) key = key.toUpperCase();
+  return withMods(e, key);
+}
+
+/* 한글 입력 상태에서 e.key 가 자모로 오는 자판·런타임이 있다 — 그러면
+   Ctrl+E 가 'Ctrl+ㄷ' 이 되어 표에서 찾지 못한다. 위에서 못 찾았을 때만
+   자판의 물리 위치로 한 번 더 찾는다. 먼저 하지 않는 이유는, 물리 위치를
+   앞세우면 Dvorak 처럼 자판을 바꿔 쓰는 사람의 기대와 어긋나기 때문이다. */
+function comboByCode(e) {
+  const m = /^Key([A-Z])$/.exec(e.code) || /^Digit([0-9])$/.exec(e.code);
+  return m ? withMods(e, m[1]) : null;
+}
+
+function withMods(e, key) {
   const parts = [];
   if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
   if (e.altKey) parts.push('Alt');
   if (e.shiftKey) parts.push('Shift');
-  let key = e.key;
-  if (key === '+') key = '=';               // Shift 를 낀 '=' 는 '+' 로 온다
-  if (key.length === 1) key = key.toUpperCase();
   parts.push(key);
   return parts.join('+');
 }
@@ -1682,7 +1699,8 @@ window.addEventListener('keydown', (e) => {
   // 저장 여부를 묻는 모달이 떠 있는 동안은 뒤쪽 화면을 조작하지 않는다
   if (document.querySelector('.mv-modal-back')) return;
 
-  const name = SHORTCUTS[comboOf(e)];
+  const byCode = comboByCode(e);
+  const name = SHORTCUTS[comboOf(e)] || (byCode ? SHORTCUTS[byCode] : undefined);
   if (!name) return;
 
   /* 찾기 상자나 도움말 검색창에 글을 쓰는 중이라면 되돌리기·다시 실행은
@@ -1703,7 +1721,11 @@ window.addEventListener('keydown', (e) => {
 const SESSION_LIMIT = 30;
 
 async function restoreSession(session) {
-  const paths = Array.isArray(session?.paths) ? session.paths.slice(0, SESSION_LIMIT) : [];
+  const all = Array.isArray(session?.paths) ? session.paths : [];
+  const paths = all.slice(0, SESSION_LIMIT);
+  /* 넘치는 것은 되살리지 않는다. 그런데 되살린 직후 세션을 다시 저장하므로
+     여기서 말해 주지 않으면 남은 탭이 조용히 사라진 것처럼 보인다. */
+  const skipped = all.length - paths.length;
   if (!paths.length) return;
 
   restoring = true;
@@ -1725,8 +1747,12 @@ async function restoreSession(session) {
   }
 
   save();
-  // 지워졌거나 옮겨진 파일을 말없이 빠뜨리면 사용자는 탭이 준 줄도 모른다
-  if (missing) toast(`이전에 열려 있던 문서 ${missing}개를 찾지 못했습니다`);
+
+  // 말없이 빠뜨리면 사용자는 탭이 준 줄도 모른다
+  const notes = [];
+  if (missing) notes.push(`${missing}개를 찾지 못했습니다`);
+  if (skipped) notes.push(`${skipped}개는 너무 많아 열지 않았습니다`);
+  if (notes.length) toast(`이전에 열려 있던 문서 ${notes.join(', ')}`);
 }
 
 (async () => {
@@ -1751,7 +1777,15 @@ async function restoreSession(session) {
   /* ready() 보다 먼저 되살린다. ready() 를 받은 메인이 명령줄로 넘어온 파일을
      보내오는데, 그 파일이 마지막에 열려야 활성 탭이 된다 — .md 를 더블클릭해
      실행했으면 그 문서를 보고 싶지, 어제 보던 탭을 보고 싶지는 않다. */
-  await restoreSession(saved.session);
+  /* 복원이 어떤 이유로 실패해도 앱은 떠야 한다. 여기서 예외가 새어 나가면
+     ready() 에 닿지 못해, 창은 메인의 3초 안전장치로만 뜨고 명령줄로 넘어온
+     파일은 영영 열리지 않는다. 진단하기 가장 어려운 실패 방식이다. */
+  try {
+    await restoreSession(saved.session);
+  } catch (err) {
+    console.error('세션 복원 실패:', err);
+    toast('지난 세션을 되살리지 못했습니다');
+  }
 
   api.ready();
 })();
