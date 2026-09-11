@@ -221,12 +221,12 @@ git push -u origin main
 
 ```bash
 # package.json·package-lock.json을 함께 변경
-npm version 2.1.0 --no-git-tag-version
-# 이어서 tauri.conf.json·Cargo.toml도 2.1.0으로 맞춘 뒤
+npm version 2.0.3 --no-git-tag-version
+# 이어서 tauri.conf.json·Cargo.toml도 2.0.3으로 맞춘 뒤
 npm run check:version
-git commit -am "2.1.0"
-git tag v2.1.0
-git push origin main v2.1.0
+git commit -am "2.0.3"
+git tag v2.0.3
+git push origin main v2.0.3
 ```
 
 태그가 올라가면 `.github/workflows/tauri-release.yml` 이 Windows 러너에서 설치
