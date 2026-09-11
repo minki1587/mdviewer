@@ -1,6 +1,6 @@
 [package]
 name = "md-viewer"
-version = "2.0.2"
+version = "2.1.0"
 edition = "2021"
 description = "마크다운 뷰어 겸 편집기"
 license = "MIT"

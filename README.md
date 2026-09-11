@@ -40,6 +40,13 @@ npm run build:api      # renderer/vendor/api.js (Tauri 판 window.api)
 npm run build:web      # 위 둘
 ```
 
+핵심 동작과 버전 정합성을 한 번에 검사하려면 아래 명령을 씁니다.
+
+```bash
+npm test               # 세션·단축키·체크박스·본문 검색 회귀 테스트
+npm run check          # 버전 검사 + 테스트 + 프런트엔드 번들
+```
+
 ## 2. 설치 파일 만들기
 
 Windows에서 실행해야 NSIS 설치 파일이 만들어집니다.
@@ -53,6 +60,13 @@ npm run tauri:build
 설치 파일은 2.5MB 남짓입니다 — Electron 판의 112MB 를 Tauri 로 옮기며 줄인 값입니다.
 
 Electron 판 설치 파일이 필요하면 `npm run dist` (→ `dist/`) 가 아직 남아 있습니다.
+
+### v2.0.0·v2.0.1에서 올리는 경우
+
+v2.0.2 배포 전에 업데이터 서명 키가 바뀌었습니다. v2.0.0 또는 v2.0.1이 설치된
+컴퓨터는 새 서명을 검증할 수 없으므로 [최신 릴리스](https://github.com/minki1587/mdviewer/releases/latest)의
+설치 파일을 한 번 직접 설치해야 합니다. v2.0.2 이상부터는 다시 앱 안에서 자동으로
+업데이트할 수 있습니다. 기존 문서와 앱 설정은 지워지지 않습니다.
 
 ## 3. `.md` 기본 프로그램으로 지정
 
@@ -115,11 +129,17 @@ Windows 10/11은 보안상 기본 앱을 프로그램이 스스로 바꾸지 못
 | 목차 고정 | `Ctrl+\` — 평소엔 왼쪽 레일에 마우스를 올리면 펼쳐집니다 |
 | 밝게 / 어둡게 | `Ctrl+D` |
 | 문서에서 찾기 | `Ctrl+F` — 읽기 화면에서는 본문을 그대로 두고 찾습니다 |
+| 읽기 여백 조절 | 상단의 좌우 화살표 단추 — 슬라이더 또는 빠른 설정 사용 |
 | 마크다운 문법 도움말 | `F1` |
 | 글자 크기 | `Ctrl` `+` / `-` / `0`, 또는 `Ctrl` + 휠 |
 
 나란히 보기에서는 가운데 경계선을 끌어 너비를 바꿀 수 있고,
 두 번 클릭하면 반반으로 돌아갑니다.
+
+**읽기 여백** — 상단의 좌우 화살표 단추를 누르면 본문 너비 조절창이 열립니다.
+본문을 좁히면 좌우 여백이 넓어지고, 본문을 넓히면 한 줄에 더 많은 내용이
+표시됩니다. `넓게`·`기본`·`좁게` 빠른 설정도 제공하며 선택값은 다음 실행에도
+유지됩니다. 나란히 보기의 읽기 영역에도 같은 설정이 적용됩니다.
 
 **스크롤 동기화** — 단순히 높이 비율만 맞추면 그림이나 코드 블록에서 금방
 어긋납니다. 그래서 원문의 제목 줄과 미리보기의 제목 위치를 짝지어 두고
@@ -188,17 +208,22 @@ git push -u origin main
 **발행은 태그를 밀 때만** 일어납니다. `main` 에 푸시하면
 `.github/workflows/tauri-build.yml` 이 컴파일과 서명 경로만 확인하고 끝냅니다.
 
-버전은 세 곳에 있고 **모두 같아야 합니다.** `npm version` 은 `package.json` 만
-고치므로 나머지 둘은 손으로 맞춰야 합니다.
+버전은 아래 파일에 있고 **모두 같아야 합니다.** `npm run check:version`이 서로
+다른 값과 태그 불일치를 빌드 전에 잡습니다. `package-lock.json`의 루트 버전도
+같이 확인합니다.
 
 | 파일 | 자리 |
 |---|---|
 | `package.json` | `version` |
+| `package-lock.json` | 최상위 `version`과 루트 패키지 `version` |
 | `src-tauri/tauri.conf.json` | `version` — 앱이 자기 버전으로 쓰는 값 |
 | `src-tauri/Cargo.toml` | `[package] version` |
 
 ```bash
-# 세 파일의 버전을 2.1.0 으로 맞춘 뒤
+# package.json·package-lock.json을 함께 변경
+npm version 2.1.0 --no-git-tag-version
+# 이어서 tauri.conf.json·Cargo.toml도 2.1.0으로 맞춘 뒤
+npm run check:version
 git commit -am "2.1.0"
 git tag v2.1.0
 git push origin main v2.1.0
@@ -263,12 +288,14 @@ npx tauri signer generate -p "" -w ~/.tauri/mdviewer-updater.key
 renderer/index.html      화면 구조
 renderer/style.css       테마 토큰, 리딩 레일, 본문 타이포그래피, 편집기, 인쇄 배치
 renderer/renderer.js     탭 관리, 문서 표시, 부분 갱신, 저장 흐름, 스크롤 동기화, 내보내기
+renderer/core.js         세션·단축키·체크박스·검색의 테스트 가능한 공용 로직
 renderer/help-data.js    도움말에 실리는 마크다운 문법·단축키 목록
 renderer/api-entry.js    Tauri 판 window.api — 마크다운 변환, 명령 호출, 대화상자
 renderer/vendor/         scripts/ 가 만들어 내는 번들 (직접 고치지 않음)
 
 src-tauri/src/main.rs    창 생성, 파일 열기·저장, 파일 감시, 메뉴, 설정, 자동 업데이트
 src-tauri/tauri.conf.json  앱 이름·버전·아이콘·확장자 연결·CSP·업데이터 주소와 공개키
+src-tauri/Cargo.lock     Rust 의존성 고정(재현 가능한 빌드)
 
 main.js                  Electron 판 메인 (같은 일을 하는 다른 런타임)
 preload.js               Electron 판 window.api
@@ -277,6 +304,8 @@ scripts/editor-entry.js  CodeMirror 6 설정 — 문법 강조, 편집 명령
 scripts/build-editor.mjs esbuild 번들 스크립트 (편집기)
 scripts/build-api.mjs    esbuild 번들 스크립트 (Tauri 판 api)
 scripts/check-signing-key.mjs  업데이터 서명 키·암호·공개키가 맞는지 확인
+scripts/check-version.mjs  앱·잠금 파일·태그의 버전 정합성 확인
+test/core.test.js       핵심 동작 회귀 테스트
 assets/icon.ico          앱 및 파일 연결 아이콘
 .github/workflows/       main 푸시는 빌드 검증, 태그는 릴리스 발행
 ```
@@ -299,8 +328,14 @@ assets/icon.ico          앱 및 파일 연결 아이콘
 
 ## 8. 손볼 만한 곳
 
+`src-tauri/tauri.conf.json`과 `package.json`에 남아 있는
+`com.yourname.mdviewer`는 v2.0.0부터 설치·업데이트 식별자로 쓰인 값입니다.
+이름은 임시값처럼 보이지만 기존 사용자와의 호환성을 위해 유지합니다. 바꾸려면
+기존 앱에서 설정을 옮기고 이전 설치본을 제거하는 별도 마이그레이션 릴리스가
+필요합니다.
+
 - 아이콘 교체: `src-tauri/icons/` (Electron 판은 `assets/icon.ico`)
-- 앱 이름·ID: `src-tauri/tauri.conf.json` 의 `productName`, `identifier`
+- 앱 이름: `src-tauri/tauri.conf.json` 의 `productName`
 - 연결할 확장자: `src-tauri/tauri.conf.json` 의 `bundle.fileAssociations[0].ext`
 - 본문 폭·글꼴: `renderer/style.css` 의 `--measure`, `--font-body`
 - 편집기 색상: `renderer/style.css` 의 `--ed-*` 변수

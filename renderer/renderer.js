@@ -6,6 +6,7 @@
 (function () {
 
 const api = window.api;
+const core = window.MVCore;
 const $ = (sel) => document.querySelector(sel);
 
 const scroller  = $('#scroller');
@@ -17,6 +18,11 @@ const crumbDir  = $('#crumb-dir');
 const tabsEl    = $('#tabs');
 const btnToc    = $('#btn-toc');
 const btnTheme  = $('#btn-theme');
+const btnMeasure = $('#btn-measure');
+const measurePopover = $('#measure-popover');
+const measureRange = $('#measure-range');
+const measureValue = $('#measure-value');
+const measurePresets = $('#measure-presets');
 const modesEl   = $('#modes');
 const panes     = $('#panes');
 const gutter    = $('#gutter');
@@ -46,6 +52,8 @@ let theme = 'light';
 let scale = 1;
 let pinned = false;
 let split = 50;
+const DEFAULT_MEASURE = 74;
+let measure = DEFAULT_MEASURE;
 
 /* 미리보기 부분 갱신용 — 지금 #doc 에 그려져 있는 블록들 */
 let lastBlocks = [];
@@ -97,6 +105,43 @@ function applyScale(next) {
   save();
 }
 
+function measureLabel(value) {
+  if (value === DEFAULT_MEASURE) return '기본';
+  if (value <= 62) return '여백 넓게';
+  if (value >= 90) return '여백 좁게';
+  return '맞춤';
+}
+
+function applyMeasure(next) {
+  measure = core.normalizeMeasure(next);
+  document.documentElement.style.setProperty('--measure', `${measure}ch`);
+  measureRange.value = String(measure);
+
+  const label = measureLabel(measure);
+  measureValue.textContent = label;
+  measureRange.setAttribute('aria-valuetext', label);
+  btnMeasure.title = `읽기 여백 조절 (${label})`;
+  for (const button of measurePresets.querySelectorAll('button[data-measure]')) {
+    const selected = Number(button.dataset.measure) === measure;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-pressed', String(selected));
+  }
+  updateRail();
+  save();
+}
+
+function closeMeasure() {
+  measurePopover.hidden = true;
+  btnMeasure.setAttribute('aria-expanded', 'false');
+}
+
+function toggleMeasure() {
+  const opening = measurePopover.hidden;
+  measurePopover.hidden = !opening;
+  btnMeasure.setAttribute('aria-expanded', String(opening));
+  if (opening) measureRange.focus();
+}
+
 function applyPin(next) {
   pinned = next;
   rail.classList.toggle('pinned', pinned);
@@ -115,6 +160,7 @@ function setMode(next) {
   mode = next;
   document.body.classList.remove('mode-read', 'mode-edit', 'mode-split');
   document.body.classList.add(`mode-${mode}`);
+  if (mode === 'edit') closeMeasure();
   for (const b of modesEl.children) b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
 
   const t = active();
@@ -159,7 +205,7 @@ let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    const patch = { theme, scale, pinned, mode, split, recent };
+    const patch = { theme, scale, measure, pinned, mode, split, recent };
     /* 복원 중이면 session 키를 아예 빼서 보낸다. 메인의 set_settings 는
        받은 키만 덮어쓰므로, 저장돼 있던 목록이 그대로 남는다. */
     if (!restoring) patch.session = sessionSnapshot();
@@ -809,37 +855,13 @@ let findIndex = 0;
 
 /** 본문의 모든 텍스트를 한 줄로 잇고, 각 노드가 어디서 시작하는지 적어 둔다. */
 function findHaystack() {
-  const walker = document.createTreeWalker(docEl, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  let text = '';
-  let n;
-  while ((n = walker.nextNode())) {
-    nodes.push({ node: n, start: text.length });
-    text += n.nodeValue;
-  }
-  return { nodes, text };
+  return core.textHaystack(docEl);
 }
 
 /** 이어붙인 문자열의 [from, to) 를 실제 DOM Range 로 되돌린다.
     한 낱말이 <b> 등으로 쪼개져 여러 노드에 걸쳐 있어도 맞는다. */
 function findRange(nodes, from, to) {
-  const locate = (pos) => {
-    let lo = 0;
-    let hi = nodes.length - 1;
-    let at = 0;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (nodes[mid].start <= pos) { at = mid; lo = mid + 1; } else hi = mid - 1;
-    }
-    return [nodes[at].node, pos - nodes[at].start];
-  };
-
-  const [sn, so] = locate(from);
-  const [en, eo] = locate(to);
-  const r = document.createRange();
-  r.setStart(sn, Math.min(so, sn.nodeValue.length));
-  r.setEnd(en, Math.min(eo, en.nodeValue.length));
-  return r;
+  return core.textRange(document, nodes, from, to);
 }
 
 function paintFindMarks() {
@@ -880,13 +902,8 @@ function findRun({ keepIndex = false } = {}) {
   if (q.trim()) {
     const { nodes, text } = findHaystack();
     if (nodes.length) {
-      const hay = text.toLowerCase();
-      const needle = q.toLowerCase();
-      let at = hay.indexOf(needle);
-      while (at !== -1 && findRanges.length < FIND_LIMIT) {
-        findRanges.push(findRange(nodes, at, at + needle.length));
-        at = hay.indexOf(needle, at + needle.length);
-      }
+      findRanges = core.findTextOffsets(text, q, FIND_LIMIT)
+        .map(([from, to]) => findRange(nodes, from, to));
     }
   }
 
@@ -1014,36 +1031,9 @@ copyBtn.addEventListener('click', async () => {
  * 그리는 순서는 원문 순서와 같다.
  * ------------------------------------------------------------------ */
 
-/* 인용문 안(`> - [ ]`)도 체크박스로 그려지므로 '>' 를 넘겨 가며 읽는다. */
-const TASK_LINE = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+\[)([ xX])(?=\])/;
-
-/* 코드 울타리. 안쪽의 `- [ ]` 는 글자 그대로 나오지 세어야 할 항목이 아니다.
-   이걸 빼먹으면 세는 수가 어긋나 엉뚱한 줄이 바뀐다 — 마크다운 문법을
-   설명하는 문서에서 실제로 일어난다. */
-const FENCE = /^\s{0,3}(`{3,}|~{3,})/;
-
 /** 원문에서 n번째 할 일 항목의 상태 글자가 몇 번째 글자인지. 없으면 -1. */
 function taskCharAt(text, nth) {
-  const lines = text.split('\n');
-  let seen = -1;
-  let offset = 0;          // 문서 처음부터 이 줄 앞까지의 글자 수
-  let fence = null;        // 열려 있는 울타리의 표시 문자열
-
-  for (const line of lines) {
-    const f = line.match(FENCE);
-    if (f) {
-      if (!fence) fence = f[1];
-      // 닫는 울타리는 같은 문자로 열 때만큼 길거나 더 길어야 한다
-      else if (f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
-    } else if (!fence) {
-      const m = line.match(TASK_LINE);
-      if (m && ++seen === nth) {
-        return { at: offset + m[1].length, on: m[2].toLowerCase() === 'x' };
-      }
-    }
-    offset += line.length + 1;          // +1 은 줄바꿈
-  }
-  return null;
+  return core.taskCharAt(text, nth);
 }
 
 function toggleTask(box) {
@@ -1228,6 +1218,12 @@ $('#help-close').addEventListener('click', closeHelp);
 $('#btn-help').addEventListener('click', () => openHelp('syntax'));
 helpEl.addEventListener('mousedown', (e) => { if (e.target === helpEl) closeHelp(); });
 window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !measurePopover.hidden) {
+    e.preventDefault();
+    closeMeasure();
+    btnMeasure.focus();
+    return;
+  }
   if (e.key === 'Escape' && !helpEl.hidden) { e.preventDefault(); closeHelp(); return; }
   // 찾기 상자 밖에 초점이 있어도 Esc 로 닫히게 한다
   if (e.key === 'Escape' && !findEl.hidden) { e.preventDefault(); findClose(); }
@@ -1497,6 +1493,17 @@ $('#btn-open').addEventListener('click', () => api.pickFiles());
 $('#btn-new').addEventListener('click', () => newTab());
 $('#empty-open').addEventListener('click', () => api.pickFiles());
 btnTheme.addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));
+btnMeasure.addEventListener('click', toggleMeasure);
+measureRange.addEventListener('input', () => applyMeasure(Number(measureRange.value)));
+measurePresets.addEventListener('click', (e) => {
+  const button = e.target.closest('button[data-measure]');
+  if (button) applyMeasure(Number(button.dataset.measure));
+});
+document.addEventListener('pointerdown', (e) => {
+  if (measurePopover.hidden) return;
+  if (measurePopover.contains(e.target) || btnMeasure.contains(e.target)) return;
+  closeMeasure();
+});
 btnToc.addEventListener('click', () => applyPin(!pinned));
 $('#btn-export').addEventListener('click', () => exportPdf());
 modesEl.addEventListener('click', (e) => {
@@ -1637,70 +1644,13 @@ api.onMode((next) => runCommand(
  * 표에 있지만, CodeMirror 가 먼저 처리하면서 preventDefault 를 걸기 때문에
  * 편집 중에는 편집기가 이기고 읽기 모드에서만 이 표가 맡는다.
  */
-const SHORTCUTS = {
-  'Ctrl+N': 'doc:new',
-  'Ctrl+O': 'files:pick',
-  'Ctrl+S': 'doc:save',
-  'Ctrl+Shift+S': 'doc:save-as',
-  'Ctrl+Alt+S': 'doc:save-all',
-  'Ctrl+P': 'doc:export-pdf',
-  'Ctrl+R': 'doc:reload',
-  'Ctrl+W': 'tab:close',
-  'Ctrl+Tab': 'tab:next',
-  'Ctrl+Shift+Tab': 'tab:prev',
-  'Ctrl+E': 'view:mode:toggle',
-  'Ctrl+Shift+E': 'view:mode:split',
-  'Ctrl+\\': 'view:toggle-toc',
-  'Ctrl+D': 'view:toggle-theme',
-  'Ctrl+=': 'view:zoom:in',
-  'Ctrl+Shift+=': 'view:zoom:in',
-  'Ctrl+-': 'view:zoom:out',
-  'Ctrl+0': 'view:zoom:reset',
-  'Ctrl+F': 'edit:find',
-  'Ctrl+Z': 'edit:undo',
-  'Ctrl+Shift+Z': 'edit:redo',
-  'Ctrl+B': 'edit:bold',
-  'Ctrl+I': 'edit:italic',
-  'Ctrl+K': 'edit:link',
-  'F1': 'help:syntax',
-  'F11': 'view:fullscreen',
-  'F12': 'view:devtools',
-};
-
-/** 눌린 조합을 'Ctrl+Shift+S' 같은 한 줄로 만든다. */
-function comboOf(e) {
-  let key = e.key;
-  if (key === '+') key = '=';               // Shift 를 낀 '=' 는 '+' 로 온다
-  if (key.length === 1) key = key.toUpperCase();
-  return withMods(e, key);
-}
-
-/* 한글 입력 상태에서 e.key 가 자모로 오는 자판·런타임이 있다 — 그러면
-   Ctrl+E 가 'Ctrl+ㄷ' 이 되어 표에서 찾지 못한다. 위에서 못 찾았을 때만
-   자판의 물리 위치로 한 번 더 찾는다. 먼저 하지 않는 이유는, 물리 위치를
-   앞세우면 Dvorak 처럼 자판을 바꿔 쓰는 사람의 기대와 어긋나기 때문이다. */
-function comboByCode(e) {
-  const m = /^Key([A-Z])$/.exec(e.code) || /^Digit([0-9])$/.exec(e.code);
-  return m ? withMods(e, m[1]) : null;
-}
-
-function withMods(e, key) {
-  const parts = [];
-  if (e.ctrlKey || e.metaKey) parts.push('Ctrl');
-  if (e.altKey) parts.push('Alt');
-  if (e.shiftKey) parts.push('Shift');
-  parts.push(key);
-  return parts.join('+');
-}
-
 window.addEventListener('keydown', (e) => {
   // 편집기나 모달이 이미 처리한 키는 건드리지 않는다
   if (e.defaultPrevented) return;
   // 저장 여부를 묻는 모달이 떠 있는 동안은 뒤쪽 화면을 조작하지 않는다
   if (document.querySelector('.mv-modal-back')) return;
 
-  const byCode = comboByCode(e);
-  const name = SHORTCUTS[comboOf(e)] || (byCode ? SHORTCUTS[byCode] : undefined);
+  const name = core.shortcutFor(e);
   if (!name) return;
 
   /* 찾기 상자나 도움말 검색창에 글을 쓰는 중이라면 되돌리기·다시 실행은
@@ -1721,11 +1671,11 @@ window.addEventListener('keydown', (e) => {
 const SESSION_LIMIT = 30;
 
 async function restoreSession(session) {
-  const all = Array.isArray(session?.paths) ? session.paths : [];
-  const paths = all.slice(0, SESSION_LIMIT);
+  const plan = core.sessionPlan(session, SESSION_LIMIT);
+  const { paths } = plan;
   /* 넘치는 것은 되살리지 않는다. 그런데 되살린 직후 세션을 다시 저장하므로
      여기서 말해 주지 않으면 남은 탭이 조용히 사라진 것처럼 보인다. */
-  const skipped = all.length - paths.length;
+  const { skipped } = plan;
   if (!paths.length) return;
 
   restoring = true;
@@ -1733,14 +1683,10 @@ async function restoreSession(session) {
   try {
     // 한 줄씩 기다리면 파일이 많을 때 창 뜨는 것이 늦어진다. 읽기는 한꺼번에,
     // 탭으로 만드는 것은 저장된 순서대로 한다.
-    const docs = await Promise.all(
-      paths.map((p) => Promise.resolve(api.readFile(p)).catch(() => null)),
-    );
-    for (const doc of docs) {
-      if (doc) openPayload(doc);
-      else missing++;
-    }
-    const target = tabs.find((t) => t.path === session.active);
+    const loaded = await core.loadSessionDocuments(session, api.readFile, SESSION_LIMIT);
+    missing = loaded.missing;
+    for (const doc of loaded.documents) openPayload(doc);
+    const target = tabs.find((t) => t.path === loaded.active);
     if (target) activate(target.id);
   } finally {
     restoring = false;
@@ -1762,6 +1708,7 @@ async function restoreSession(session) {
   const systemDark = await api.systemPrefersDark().catch(() => false);
   applyTheme(saved.theme || (systemDark ? 'dark' : 'light'));
   applyScale(typeof saved.scale === 'number' ? saved.scale : 1);
+  applyMeasure(typeof saved.measure === 'number' ? saved.measure : DEFAULT_MEASURE);
   applyPin(Boolean(saved.pinned));
   applySplit(typeof saved.split === 'number' ? saved.split : 50);
 

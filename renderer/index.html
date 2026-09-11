@@ -28,6 +28,11 @@
     <button id="btn-export" class="ghost" title="PDF로 내보내기 (Ctrl+P)" aria-label="PDF로 내보내기">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M9.2 2.4h1.6v7.24l2.44-2.44 1.13 1.13L10 12.7 5.63 8.33 6.76 7.2 9.2 9.64zM3.4 12.6H5v3.3h10v-3.3h1.6v4.9H3.4z"/></svg>
     </button>
+    <button id="btn-measure" class="ghost" type="button" title="읽기 여백 조절"
+            aria-label="읽기 여백 조절" aria-haspopup="dialog" aria-expanded="false"
+            aria-controls="measure-popover">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 3.5h1.6v13H2.5zm13.4 0h1.6v13h-1.6zM7.4 6.8 4.2 10l3.2 3.2 1.1-1.1L7.2 10l1.3-2.1zm5.2 0-1.1 1.1 1.3 2.1-1.3 2.1 1.1 1.1 3.2-3.2z"/></svg>
+    </button>
     <button id="btn-toc" class="ghost" title="목차 고정 (Ctrl+\)" aria-label="목차 고정">
       <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h3v1.6H3zm5 0h9v1.6H8zM3 9.2h3v1.6H3zm5 0h9v1.6H8zM3 13.4h3V15H3zm5 0h9V15H8z"/></svg>
     </button>
@@ -119,6 +124,23 @@
     </button>
   </div>
 
+  <div id="measure-popover" hidden role="dialog" aria-label="읽기 여백 조절">
+    <div id="measure-head">
+      <strong>읽기 여백</strong>
+      <span id="measure-value" aria-live="polite">기본</span>
+    </div>
+    <label for="measure-range">본문 너비</label>
+    <input id="measure-range" type="range" min="48" max="110" step="2" value="74" />
+    <div id="measure-captions" aria-hidden="true">
+      <span>여백 넓게</span><span>여백 좁게</span>
+    </div>
+    <div id="measure-presets" aria-label="읽기 여백 빠른 설정">
+      <button type="button" data-measure="56">넓게</button>
+      <button type="button" data-measure="74">기본</button>
+      <button type="button" data-measure="98">좁게</button>
+    </div>
+  </div>
+
   <div id="drop" aria-hidden="true"><span>여기에 놓으면 탭으로 열립니다</span></div>
   <div id="update" hidden role="status" aria-live="polite">
     <div id="update-head">
@@ -137,6 +159,7 @@
   <script src="vendor/api.js"></script>
   <script src="vendor/editor.js"></script>
   <script src="help-data.js"></script>
+  <script src="core.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

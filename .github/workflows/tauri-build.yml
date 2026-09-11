@@ -45,6 +45,16 @@ jobs:
       - name: 의존성 설치
         run: npm ci
 
+      - name: 버전 정합성 확인
+        run: npm run check:version
+
+      - name: 자동 테스트
+        run: npm test
+
+      - name: Rust 잠금 파일 확인
+        shell: bash
+        run: cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+
       - name: 프런트엔드 번들
         run: npm run build:web
 

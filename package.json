@@ -1,9 +1,9 @@
 {
   "name": "md-viewer",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "마크다운 뷰어 겸 편집기",
   "main": "main.js",
-  "author": "Your Name",
+  "author": "minki1587",
   "license": "MIT",
   "private": true,
   "scripts": {
@@ -20,6 +20,9 @@
     "setup:repo": "node scripts/set-repo.mjs",
     "build:api": "node scripts/build-api.mjs",
     "build:web": "npm run build:editor && npm run build:api",
+    "test": "node --test",
+    "check:version": "node scripts/check-version.mjs",
+    "check": "npm run check:version && npm test && npm run build:web",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -45,12 +48,12 @@
     "electron": "^44.0.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
-    "jsdom": "^30.0.1"
+    "jsdom": "^26.1.0"
   },
   "build": {
     "appId": "com.yourname.mdviewer",
     "productName": "MD Viewer",
-    "copyright": "Copyright © 2026 Your Name",
+    "copyright": "Copyright © 2026 minki1587",
     "directories": {
       "output": "dist",
       "buildResources": "assets"
