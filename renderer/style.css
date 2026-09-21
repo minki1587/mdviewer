@@ -382,7 +382,21 @@ body.mode-edit, body.mode-split { --status-h: 26px; }
   z-index: 25;
 }
 body.mode-edit #status, body.mode-split #status { display: flex; }
-#stat-save { margin-left: auto; }
+#zoom { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+#zoom .ghost { width: 20px; height: 20px; }
+#zoom .ghost svg { width: 13px; height: 13px; }
+#zoom-value {
+  min-width: 40px;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+#zoom-value:hover { background: var(--line-soft); color: var(--ink); }
 body.unsaved #stat-save { color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   #scroller { scroll-behavior: auto; }

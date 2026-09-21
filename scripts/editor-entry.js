@@ -64,7 +64,7 @@ const baseTheme = EditorView.theme({
   '.cm-content': { caretColor: 'var(--accent)', padding: '0' },
   '.cm-line': { padding: '0 20px 0 8px' },
   '&.cm-focused': { outline: 'none' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)', borderLeftWidth: '2px' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)', borderLeftWidth: 'calc(2px * var(--scale))' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
     backgroundColor: 'var(--ed-select)',
   },
@@ -256,6 +256,8 @@ function create({ parent, doc = '', onChange, onScroll, onSave }) {
       view.dispatch({ changes: { from, to, insert } });
     },
     focus: () => view.focus(),
+    /** 글자 크기(--scale)가 바뀐 뒤 줄 높이·커서 크기를 다시 재게 한다 */
+    remeasure: () => view.requestMeasure(),
     scrollEl: () => view.scrollDOM,
     undo: () => undo(view),
     redo: () => redo(view),

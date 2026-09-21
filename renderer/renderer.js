@@ -29,6 +29,7 @@ const gutter    = $('#gutter');
 const statPos   = $('#stat-pos');
 const statCount = $('#stat-count');
 const statSave  = $('#stat-save');
+const zoomValue = $('#zoom-value');
 const toastEl   = $('#toast');
 
 /* ==================================================================
@@ -101,6 +102,8 @@ function applyTheme(next) {
 function applyScale(next) {
   scale = Math.min(2.2, Math.max(0.7, Math.round(next * 20) / 20));
   document.documentElement.style.setProperty('--scale', scale);
+  editor.remeasure();
+  zoomValue.textContent = `${Math.round(scale * 100)}%`;
   updateRail();
   save();
 }
@@ -1516,6 +1519,10 @@ scroller.addEventListener('wheel', (e) => {
   e.preventDefault();
   applyScale(scale + (e.deltaY < 0 ? 0.05 : -0.05));
 }, { passive: false });
+
+$('#zoom-out').addEventListener('click', () => applyScale(scale - 0.1));
+$('#zoom-in').addEventListener('click', () => applyScale(scale + 0.1));
+zoomValue.addEventListener('click', () => applyScale(1));
 
 document.addEventListener('selectionchange', () => {
   if (mode !== 'read') updateStatus();
