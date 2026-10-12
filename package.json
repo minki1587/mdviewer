@@ -85,7 +85,7 @@
           "mdown",
           "mkd"
         ],
-        "name": "Markdown Document",
+        "name": "MDViewer.Markdown",
         "description": "마크다운 문서",
         "icon": "assets/icon.ico",
         "role": "Viewer"

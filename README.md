@@ -70,19 +70,31 @@ v2.0.2 배포 전에 업데이터 서명 키가 바뀌었습니다. v2.0.0 또�
 
 ## 3. `.md` 기본 프로그램으로 지정
 
-설치 프로그램이 `.md`, `.markdown`, `.mdown`, `.mkd` 확장자를 레지스트리에 등록하지만,
-Windows 10/11은 보안상 기본 앱을 프로그램이 스스로 바꾸지 못하게 막습니다.
-설치 후 한 번만 직접 지정해 주세요.
+Windows 10/11은 프로그램이 기본 앱을 스스로 바꾸지 못하게 막습니다. 그래서
+MD Viewer는 **고를 수 있게 등록하고, 고르는 창을 띄워 주는 것**까지 합니다.
 
-**방법 A — 파일에서 바로**
-`.md` 파일 우클릭 → **연결 프로그램** → **다른 앱 선택** → `MD Viewer` →
-**항상 이 앱을 사용하여 .md 파일 열기** 체크 → 확인
+**앱에서 바로** — **도움말 → .md 기본 앱으로 지정…** 을 누르면 Windows의
+"이 파일을 어떻게 여시겠습니까?" 창이 뜹니다. `MD Viewer` 를 고르고 확인하면
+끝입니다. 기본 앱이 아닌 채로 앱을 켜면 처음에 한 번 물어보고,
+**다시 묻지 않기** 를 고르면 더 묻지 않습니다.
 
-**방법 B — 설정에서**
-설정 → 앱 → 기본 앱 → `MD Viewer` 검색 → `.md` 항목을 MD Viewer로 변경
+**설정에서** — 설정 → 앱 → 기본 앱 → **파일 형식별 기본 앱 선택** → `.md`
+항목을 MD Viewer로 변경. 위 창이 뜨지 않을 때 앱이 이 화면으로 안내합니다.
 
 지정 후에는 `.md` 파일을 더블클릭하면 바로 열립니다.
 이미 실행 중이면 새 창을 띄우지 않고 기존 창에서 문서를 바꿉니다.
+
+**다른 앱이 가로채지 않게** — 파일 형식 이름(ProgID)은 `MDViewer.Markdown`
+입니다. 2.0.3까지는 `Markdown Document` 였는데, Notion 같은 다른 앱도 같은
+이름을 써서 그 앱이 설치·업데이트될 때 열기 명령을 덮어썼습니다. 그러면 `.md`
+기본 앱을 MD Viewer로 골라 두어도 다른 앱이 열렸습니다. 이전 판에서 올라왔다면
+위 방법으로 **한 번만 다시 지정**해 주세요.
+
+앱은 실행할 때마다 자기 등록(`HKCU\Software\Classes\MDViewer.Markdown`,
+`.md` 의 `OpenWithProgids`, 설정 → 기본 앱에 이름이 뜨게 하는
+`RegisteredApplications`)이 지금 실행 파일을 가리키는지 확인하고, 어긋났을
+때만 고쳐 씁니다. `.md` 의 기본값과 사용자 선택(UserChoice)은 건드리지 않습니다.
+제거할 때는 `src-tauri/windows/hooks.nsh` 가 이 등록을 지웁니다.
 
 ## 4. 조작
 
@@ -294,6 +306,8 @@ renderer/api-entry.js    Tauri 판 window.api — 마크다운 변환, 명령 �
 renderer/vendor/         scripts/ 가 만들어 내는 번들 (직접 고치지 않음)
 
 src-tauri/src/main.rs    창 생성, 파일 열기·저장, 파일 감시, 메뉴, 설정, 자동 업데이트
+src-tauri/src/default_app.rs  .md 기본 앱 등록, '연결 프로그램' 창, 기본 앱 여부 확인
+src-tauri/windows/hooks.nsh   제거할 때 위 등록을 지우는 설치 프로그램 훅
 src-tauri/tauri.conf.json  앱 이름·버전·아이콘·확장자 연결·CSP·업데이터 주소와 공개키
 src-tauri/Cargo.lock     Rust 의존성 고정(재현 가능한 빌드)
 
@@ -336,7 +350,8 @@ assets/icon.ico          앱 및 파일 연결 아이콘
 
 - 아이콘 교체: `src-tauri/icons/` (Electron 판은 `assets/icon.ico`)
 - 앱 이름: `src-tauri/tauri.conf.json` 의 `productName`
-- 연결할 확장자: `src-tauri/tauri.conf.json` 의 `bundle.fileAssociations[0].ext`
+- 연결할 확장자: `src-tauri/tauri.conf.json` 의 `bundle.fileAssociations[0].ext` —
+  `src-tauri/src/default_app.rs` 의 `EXTS` 와 `src-tauri/windows/hooks.nsh` 도 같이 맞춥니다
 - 본문 폭·글꼴: `renderer/style.css` 의 `--measure`, `--font-body`
 - 편집기 색상: `renderer/style.css` 의 `--ed-*` 변수
 - 인쇄 여백·글자 크기: `renderer/style.css` 의 `@page` 와 `@media print`

@@ -6,6 +6,8 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod default_app;
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -399,6 +401,50 @@ fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/* ------------------------------------------------------------------ *
+ * 명령 — .md 기본 앱 (자세한 사정은 default_app.rs 머리말)
+ * ------------------------------------------------------------------ */
+
+/// dev 는 개발 빌드라는 표시다. 개발 중에는 실행 파일이 설치본과 달라 늘
+/// '기본 앱 아님' 으로 나오므로, 렌더러가 시작할 때 묻지 않게 한다.
+#[tauri::command]
+fn default_app_status() -> Value {
+    json!({
+        "supported": cfg!(windows),
+        "isDefault": default_app::is_default(),
+        "dev": cfg!(debug_assertions),
+    })
+}
+
+/// Windows 의 '연결 프로그램' 창을 띄워 사용자가 MD Viewer 를 고르게 한다.
+/// 창이 닫힐 때까지 기다리므로 블로킹 스레드에서 돌린다.
+#[tauri::command]
+async fn set_default_app(app: AppHandle) -> Value {
+    #[cfg(windows)]
+    let parent = app
+        .get_webview_window("main")
+        .and_then(|w| w.hwnd().ok())
+        .map(|h| h.0 as isize)
+        .unwrap_or(0);
+    #[cfg(not(windows))]
+    let parent = {
+        let _ = &app;
+        0isize
+    };
+
+    let sample = std::env::temp_dir().join("MD Viewer 기본 앱 지정.md");
+    tauri::async_runtime::spawn_blocking(move || default_app::choose(&sample, parent))
+        .await
+        .unwrap_or_else(|e| json!({ "status": "failed", "message": e.to_string() }))
+}
+
+/// 연결 프로그램 창으로 안 될 때의 길. 설정 → 앱 → 기본 앱.
+#[tauri::command]
+fn open_default_apps_settings(app: AppHandle) {
+    use tauri_plugin_opener::OpenerExt;
+    let _ = app.opener().open_url("ms-settings:defaultapps", None::<&str>);
+}
+
 /* 개발자 도구와 전체 화면은 창을 직접 만져야 해서 메뉴 안에서 처리해 왔다.
    단축키는 렌더러가 받으므로(아래 build_menu 주석 참고) 렌더러도 부를 수
    있어야 한다. 메뉴 쪽 dispatch_menu 도 이 함수들을 쓴다. */
@@ -553,6 +599,7 @@ fn build_menu(app: &AppHandle, recent: &[String]) -> tauri::Result<()> {
         .item(&item("help:keys", "단축키 목록", None)?)
         .separator()
         .item(&item("update:check", "업데이트 확인", None)?)
+        .item(&item("app:set-default", ".md 기본 앱으로 지정…", None)?)
         .separator()
         .item(&item("help:about", "MD Viewer 정보", None)?)
         .build()?;
@@ -808,6 +855,9 @@ fn main() {
             check_update,
             download_update,
             install_update,
+            default_app_status,
+            set_default_app,
+            open_default_apps_settings,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -821,6 +871,13 @@ fn main() {
             });
 
             spawn_watcher(handle.clone());
+
+            // '연결 프로그램' 목록과 설정 → 기본 앱에 MD Viewer 가 늘 보이게 한다.
+            // 이미 맞게 등록돼 있으면 읽기만 하고 끝난다. 개발 빌드는 설치본의
+            // 등록을 임시 실행 파일로 바꿔 놓지 않도록 건너뛴다.
+            if !cfg!(debug_assertions) {
+                std::thread::spawn(default_app::ensure_registered);
+            }
 
             // 안전장치: 렌더러가 ready 를 못 보내는 상황(스크립트 오류 등)에도
             // 창은 떠야 한다. 보이지 않는 창은 진단할 방법조차 없다.

@@ -285,6 +285,10 @@ function wireEvents() {
     });
   });
 
+  // 도움말 → .md 기본 앱으로 지정
+  listen('app:set-default', () => { chooseDefaultApp(); });
+  setTimeout(askDefaultAppOnce, DEFAULT_APP_ASK_DELAY);
+
   /* 파일 드롭.
      WebView2 는 OS 파일 드래그를 DOM 이벤트로 주지 않는다. Tauri 가 주는
      경로를 받아 처리하고, renderer.js 의 시각 효과 클래스만 맞춰 준다. */
@@ -305,6 +309,68 @@ function wireEvents() {
       if (paths.length) invoke('open_path', { paths });
     }
   });
+}
+
+/* ------------------------------------------------------- .md 기본 앱
+   Windows 는 프로그램이 기본 앱을 스스로 바꾸지 못하게 한다. 그래서 메인은
+   Windows 의 '연결 프로그램' 창을 띄워 줄 뿐이고, 고르는 것은 사용자다.
+   (src-tauri/src/default_app.rs) */
+
+/** 창이 뜨고 세션 복원 안내 같은 것들이 먼저 지나가게 둔다. */
+const DEFAULT_APP_ASK_DELAY = 2500;
+
+async function chooseDefaultApp() {
+  const result = await invoke('set_default_app');
+  const status = result?.status;
+
+  if (status === 'default') {
+    modal({
+      title: '이제 .md 파일을 MD Viewer 로 엽니다.',
+      detail: '탐색기에서 .md 파일을 더블클릭하면 바로 이 창에서 열립니다.',
+      buttons: ['확인'],
+      cancelIndex: 0,
+    });
+    return;
+  }
+  if (status === 'canceled') return;     // 사용자가 그냥 닫았다 — 더 묻지 않는다
+
+  /* 다른 앱을 골랐거나, 창을 띄우지 못했거나, Windows 가 선택을 저장하지
+     않았다. 설정 앱의 기본 앱 화면으로 가는 길을 알려 준다. */
+  const answer = await modal({
+    title: '아직 .md 파일의 기본 앱이 MD Viewer 가 아닙니다.',
+    detail:
+      (result?.message ? result.message + '\n\n' : '') +
+      'Windows 설정 → 앱 → 기본 앱 → "파일 형식별 기본 앱 선택" 에서\n' +
+      '.md 항목을 MD Viewer 로 바꿀 수 있습니다.',
+    buttons: ['Windows 설정 열기', '닫기'],
+    cancelIndex: 1,
+  });
+  if (answer === 0) invoke('open_default_apps_settings');
+}
+
+/** 시작할 때 한 번. 기본 앱이 아니고, 사용자가 그만 묻지 말라고 하지 않았을 때만. */
+async function askDefaultAppOnce() {
+  let state;
+  try {
+    state = await invoke('default_app_status');
+  } catch {
+    return;                              // 확인을 못 하면 묻지도 않는다
+  }
+  if (!state?.supported || state.isDefault || state.dev) return;
+
+  const settings = await invoke('get_settings').catch(() => ({}));
+  if (settings?.defaultAppAsk === 'never') return;
+
+  const answer = await modal({
+    title: '.md 파일을 MD Viewer 로 열까요?',
+    detail:
+      '지금은 .md 파일을 더블클릭하면 다른 앱이 열립니다.\n' +
+      '도움말 메뉴의 ".md 기본 앱으로 지정" 에서 언제든 바꿀 수 있습니다.',
+    buttons: ['기본 앱으로 지정', '나중에', '다시 묻지 않기'],
+    cancelIndex: 1,
+  });
+  if (answer === 0) chooseDefaultApp();
+  else if (answer === 2) invoke('set_settings', { patch: { defaultAppAsk: 'never' } });
 }
 
 /* --------------------------------------------------------------- API */

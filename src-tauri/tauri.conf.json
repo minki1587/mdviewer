@@ -51,7 +51,7 @@
           "mdown",
           "mkd"
         ],
-        "name": "Markdown Document",
+        "name": "MDViewer.Markdown",
         "description": "마크다운 문서",
         "mimeType": "text/markdown"
       }
@@ -59,6 +59,7 @@
     "windows": {
       "nsis": {
         "installMode": "currentUser",
+        "installerHooks": "./windows/hooks.nsh",
         "languages": [
           "Korean",
           "English"

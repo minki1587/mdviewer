@@ -24,6 +24,16 @@ tauri-plugin-single-instance = "2"
 # 창 크기·위치·최대화 상태를 기억한다. 데스크톱 전용이라 여기에 둔다.
 tauri-plugin-window-state = "2"
 
+# .md 기본 앱 지정(src/default_app.rs) 에 쓰는 셸·레지스트리 API.
+# 이미 잠금 파일에 있는 판을 골라 새로 받는 크레이트가 없다.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Registry",
+  "Win32_UI_Shell",
+] }
+
 # 배포 크기를 줄이는 설정. 프로토타입에서 이 설정으로 1.69MB 설치 파일을 확인했다.
 [profile.release]
 opt-level = "z"
